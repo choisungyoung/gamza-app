@@ -1,0 +1,10 @@
+ALTER TABLE UserCategoryEntity ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE ParentCategoryEntity (
+    id          INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name        TEXT    NOT NULL,
+    emoji       TEXT    NOT NULL DEFAULT '',
+    key         TEXT    NOT NULL,
+    type        TEXT    NOT NULL,
+    sort_order  INTEGER NOT NULL DEFAULT 0
+);

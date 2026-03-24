@@ -1,0 +1,172 @@
+package com.myapp.budget.data.repository
+
+import app.cash.sqldelight.coroutines.asFlow
+import app.cash.sqldelight.coroutines.mapToList
+import com.myapp.budget.db.BudgetDatabase
+import com.myapp.budget.db.ParentCategoryEntity
+import com.myapp.budget.db.UserCategoryEntity
+import com.myapp.budget.domain.model.Category
+import com.myapp.budget.domain.model.ParentCategory
+import com.myapp.budget.domain.model.TransactionType
+import com.myapp.budget.domain.model.UserCategory
+import com.myapp.budget.domain.repository.CategoryRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
+import kotlinx.datetime.Clock
+
+class CategoryRepositoryImpl(private val db: BudgetDatabase) : CategoryRepository {
+
+    private val q = db.budgetQueries
+
+    override fun getByParent(parent: String): Flow<List<UserCategory>> =
+        q.selectUserCategoriesByParent(parent)
+            .asFlow().mapToList(Dispatchers.Default)
+            .map { it.map { e -> e.toModel() } }
+
+    override fun getByType(type: TransactionType): Flow<List<UserCategory>> =
+        q.selectUserCategoriesByType(type.name)
+            .asFlow().mapToList(Dispatchers.Default)
+            .map { it.map { e -> e.toModel() } }
+
+    override fun getParentsByType(type: TransactionType): Flow<List<ParentCategory>> =
+        q.selectParentsByType(type.name)
+            .asFlow().mapToList(Dispatchers.Default)
+            .map { it.map { e -> e.toParentModel() } }
+
+    override suspend fun insert(category: UserCategory) = withContext(Dispatchers.Default) {
+        val maxOrder = q.maxUserCategorySortOrder(category.parent).executeAsOne()
+        q.insertUserCategory(category.name, category.emoji, category.parent, category.type.name, maxOrder + 1)
+    }
+
+    override suspend fun insertParent(name: String, emoji: String, type: TransactionType) = withContext(Dispatchers.Default) {
+        val maxOrder = q.maxParentSortOrderByType(type.name).executeAsOne()
+        val key = "USER_${Clock.System.now().toEpochMilliseconds()}"
+        q.insertParent(name.trim(), emoji.ifBlank { "📌" }, key, type.name, maxOrder + 1)
+    }
+
+    override suspend fun update(id: Long, name: String, emoji: String) = withContext(Dispatchers.Default) {
+        q.updateUserCategory(name, emoji, id)
+    }
+
+    override suspend fun delete(id: Long) = withContext(Dispatchers.Default) {
+        q.deleteUserCategory(id)
+    }
+
+    override suspend fun updateParent(id: Long, name: String, emoji: String) = withContext(Dispatchers.Default) {
+        q.updateParent(name, emoji, id)
+    }
+
+    override suspend fun moveParentUp(id: Long, type: TransactionType) = withContext(Dispatchers.Default) {
+        val parents = getParentsByType(type).first()
+        val index = parents.indexOfFirst { it.id == id }
+        if (index <= 0) return@withContext
+        val current = parents[index]
+        val above = parents[index - 1]
+        q.updateParentOrder(above.sortOrder.toLong(), current.id)
+        q.updateParentOrder(current.sortOrder.toLong(), above.id)
+    }
+
+    override suspend fun moveParentDown(id: Long, type: TransactionType) = withContext(Dispatchers.Default) {
+        val parents = getParentsByType(type).first()
+        val index = parents.indexOfFirst { it.id == id }
+        if (index < 0 || index >= parents.size - 1) return@withContext
+        val current = parents[index]
+        val below = parents[index + 1]
+        q.updateParentOrder(below.sortOrder.toLong(), current.id)
+        q.updateParentOrder(current.sortOrder.toLong(), below.id)
+    }
+
+    override suspend fun moveSubcategoryUp(id: Long, parentKey: String) = withContext(Dispatchers.Default) {
+        val subs = getByParent(parentKey).first()
+        val index = subs.indexOfFirst { it.id == id }
+        if (index <= 0) return@withContext
+        val current = subs[index]
+        val above = subs[index - 1]
+        q.updateUserCategoryOrder(above.sortOrder.toLong(), current.id)
+        q.updateUserCategoryOrder(current.sortOrder.toLong(), above.id)
+    }
+
+    override suspend fun moveSubcategoryDown(id: Long, parentKey: String) = withContext(Dispatchers.Default) {
+        val subs = getByParent(parentKey).first()
+        val index = subs.indexOfFirst { it.id == id }
+        if (index < 0 || index >= subs.size - 1) return@withContext
+        val current = subs[index]
+        val below = subs[index + 1]
+        q.updateUserCategoryOrder(below.sortOrder.toLong(), current.id)
+        q.updateUserCategoryOrder(current.sortOrder.toLong(), below.id)
+    }
+
+    override suspend fun ensureDefaults() = withContext(Dispatchers.Default) {
+        val subCount = q.countUserCategories().executeAsOne()
+        val parentCount = q.countParents().executeAsOne()
+
+        if (parentCount == 0L) {
+            Category.entries.forEachIndexed { index, cat ->
+                q.insertParent(cat.displayName, cat.emoji, cat.name, cat.type.name, index.toLong())
+            }
+        } else {
+            // 이체 카테고리가 없는 기존 사용자를 위해 TRANSFER parent만 별도 시딩
+            val transferCount = q.countParentsByType(TransactionType.TRANSFER.name).executeAsOne()
+            if (transferCount == 0L) {
+                val transferCategories = Category.entries.filter { it.type == TransactionType.TRANSFER }
+                transferCategories.forEachIndexed { index, cat ->
+                    q.insertParent(cat.displayName, cat.emoji, cat.name, cat.type.name, index.toLong())
+                }
+            }
+        }
+
+        if (subCount == 0L) {
+            subcategoryDefaults.forEach { (parent, subs) ->
+                subs.forEachIndexed { index, (name, emoji) ->
+                    q.insertUserCategory(name, emoji, parent.name, parent.type.name, index.toLong())
+                }
+            }
+        }
+    }
+
+    private val subcategoryDefaults = mapOf(
+        Category.FOOD to listOf(
+            "아침식사" to "🍳", "점심식사" to "🍱", "저녁식사" to "🍽️",
+            "간식" to "🍪", "카페" to "☕", "배달음식" to "🛵"
+        ),
+        Category.TRANSPORT to listOf(
+            "대중교통" to "🚇", "택시" to "🚕", "주유" to "⛽", "주차" to "🅿️"
+        ),
+        Category.HOUSING to listOf(
+            "월세" to "🏠", "관리비" to "🔧", "통신/인터넷" to "📶", "공과금" to "💡"
+        ),
+        Category.SHOPPING to listOf(
+            "의류" to "👕", "생활용품" to "🛒", "전자기기" to "💻", "온라인쇼핑" to "📦"
+        ),
+        Category.HEALTH to listOf("병원" to "🏥", "약국" to "💊", "운동" to "🏃"),
+        Category.CULTURE to listOf("영화/OTT" to "🎬", "게임" to "🎮", "여행" to "✈️", "독서" to "📖"),
+        Category.EDUCATION to listOf("책" to "📚", "강의" to "🖥️", "학원" to "🏫"),
+        Category.EXPENSE_OTHER to listOf("기타지출" to "💸"),
+        Category.SALARY to listOf("본급여" to "💰", "상여금" to "🎁"),
+        Category.SIDE_JOB to listOf("프리랜서" to "💼", "알바" to "👷"),
+        Category.INVESTMENT to listOf("주식" to "📈", "이자" to "💹", "부동산" to "🏢"),
+        Category.ALLOWANCE to listOf("용돈" to "🎁"),
+        Category.INCOME_OTHER to listOf("기타수입" to "💰")
+    )
+}
+
+private fun UserCategoryEntity.toModel() = UserCategory(
+    id = id,
+    name = name,
+    emoji = emoji,
+    parent = parent,
+    type = TransactionType.valueOf(type),
+    sortOrder = sort_order.toInt()
+)
+
+private fun ParentCategoryEntity.toParentModel() = ParentCategory(
+    id = id,
+    name = name,
+    emoji = emoji,
+    key = key,
+    type = TransactionType.valueOf(type),
+    sortOrder = sort_order.toInt()
+)

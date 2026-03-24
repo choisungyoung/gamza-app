@@ -1,0 +1,7 @@
+CREATE TABLE UserCategoryEntity (
+    id      INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name    TEXT    NOT NULL,
+    emoji   TEXT    NOT NULL DEFAULT '',
+    parent  TEXT    NOT NULL,
+    type    TEXT    NOT NULL
+);
