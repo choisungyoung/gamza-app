@@ -3,11 +3,13 @@ package com.myapp.budget.ui.statistics
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.myapp.budget.domain.model.Category
+import com.myapp.budget.domain.model.FixedExpense
 import com.myapp.budget.domain.model.TransactionType
+import com.myapp.budget.domain.repository.FixedExpenseRepository
 import com.myapp.budget.domain.repository.TransactionRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.datetime.Clock
 import kotlinx.datetime.DatePeriod
@@ -34,15 +36,19 @@ data class StatisticsUiState(
     val topCategories: List<CategoryData> = emptyList(),
     val currentMonthIncome: Long = 0,
     val currentMonthExpense: Long = 0,
-    val currentMonth: String = ""
+    val currentMonth: String = "",
+    val fixedExpenses: List<FixedExpense> = emptyList()
 )
 
 class StatisticsViewModel(
-    private val repository: TransactionRepository
+    private val repository: TransactionRepository,
+    private val fixedExpenseRepository: FixedExpenseRepository
 ) : ViewModel() {
 
-    val uiState: StateFlow<StatisticsUiState> = repository.getAll()
-        .map { transactions ->
+    val uiState: StateFlow<StatisticsUiState> = combine(
+        repository.getAll(),
+        fixedExpenseRepository.getAll()
+    ) { transactions, fixedExpenses ->
             val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
 
             val monthlyData = (5 downTo 0).map { monthsBack ->
@@ -86,7 +92,8 @@ class StatisticsViewModel(
                 topCategories = topCategories,
                 currentMonthIncome = currentIncome,
                 currentMonthExpense = currentExpense,
-                currentMonth = "${today.year}년 ${today.monthNumber}월"
+                currentMonth = "${today.year}년 ${today.monthNumber}월",
+                fixedExpenses = fixedExpenses
             )
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatisticsUiState())

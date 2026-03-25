@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Card
@@ -43,6 +45,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.myapp.budget.domain.model.Category
+import com.myapp.budget.domain.model.FixedExpense
 import com.myapp.budget.ui.theme.ExpenseColor
 import com.myapp.budget.ui.theme.IncomeColor
 import com.myapp.budget.ui.theme.PotatoBrown
@@ -106,6 +110,10 @@ fun StatisticsScreen(
                 item {
                     CategoryBreakdownCard(categories = state.topCategories)
                 }
+            }
+
+            item {
+                FixedExpenseListCard(fixedExpenses = state.fixedExpenses)
             }
         }
     }
@@ -301,6 +309,108 @@ private fun LegendItem(color: Color, label: String) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+@Composable
+private fun FixedExpenseListCard(fixedExpenses: List<FixedExpense>) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(4.dp, 20.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(PotatoBrown)
+                )
+                Text(
+                    text = "고정 지출 목록",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = PotatoDeep
+                )
+                Spacer(Modifier.weight(1f))
+                if (fixedExpenses.isNotEmpty()) {
+                    Text(
+                        text = "월 합계 ${fixedExpenses.sumOf { it.amount }.formatAsWon()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = ExpenseColor,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            if (fixedExpenses.isEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        EmojiText("📋", fontSize = 32.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "등록된 고정 지출이 없습니다",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                Spacer(Modifier.height(12.dp))
+                fixedExpenses.forEachIndexed { index, item ->
+                    if (index > 0) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
+                        )
+                    }
+                    val cat = Category.fromCategoryStr(item.category)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(ExpenseColor.copy(alpha = 0.1f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            EmojiText(text = cat.emoji, fontSize = 18.sp)
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = item.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = "매월 ${item.dayOfMonth}일",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            text = item.amount.formatAsWon(),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = ExpenseColor
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
