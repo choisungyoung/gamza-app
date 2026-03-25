@@ -223,21 +223,24 @@ class AddEditViewModel(
                 newId
             } else null
 
-            val transaction = Transaction(
-                id = editingId ?: 0,
-                title = title.trim(),
-                amount = amount,
-                type = transactionType,
-                category = categoryStr,
-                date = date,
-                time = time,
-                note = note.trim(),
-                asset = selectedAsset,
-                toAsset = toAsset,
-                fixedExpenseId = fixedExpenseId
-            )
-            if (editingId != null) repository.update(transaction)
-            else repository.insert(transaction)
+            // 고정 지출로 저장한 경우 autoRegisterPending이 이미 시작 월 거래를 생성했으므로 별도 insert 불필요
+            if (fixedExpenseId == null) {
+                val transaction = Transaction(
+                    id = editingId ?: 0,
+                    title = title.trim(),
+                    amount = amount,
+                    type = transactionType,
+                    category = categoryStr,
+                    date = date,
+                    time = time,
+                    note = note.trim(),
+                    asset = selectedAsset,
+                    toAsset = toAsset,
+                    fixedExpenseId = null
+                )
+                if (editingId != null) repository.update(transaction)
+                else repository.insert(transaction)
+            }
             onSuccess()
         }
     }
