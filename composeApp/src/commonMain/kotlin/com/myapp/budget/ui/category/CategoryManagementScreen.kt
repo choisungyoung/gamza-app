@@ -143,6 +143,7 @@ fun CategoryManagementScreen(
     var editParentTarget by remember { mutableStateOf<ParentCategory?>(null) }
     var addSubcatParent by remember { mutableStateOf<ParentCategory?>(null) }
     var editSubcatTarget by remember { mutableStateOf<UserCategory?>(null) }
+    var deleteSubcatTarget by remember { mutableStateOf<UserCategory?>(null) }
     var showAddParentDialog by remember { mutableStateOf(false) }
 
     // 대분류 펼침/접힘 상태 (기본: 접혀있음)
@@ -153,6 +154,28 @@ fun CategoryManagementScreen(
     var parentDragOffsetY by remember { mutableStateOf(0f) }
     val parentTopY = remember { mutableMapOf<Int, Float>() }
     val parentHeightPx = remember { mutableMapOf<Int, Float>() }
+
+    deleteSubcatTarget?.let { sub ->
+        AlertDialog(
+            onDismissRequest = { deleteSubcatTarget = null },
+            title = { Text("소분류 삭제", fontWeight = FontWeight.Bold) },
+            text = { Text("「${sub.name}」을(를) 삭제하시겠습니까?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteSubcategory(sub.id)
+                        if (editSubcatTarget?.id == sub.id) editSubcatTarget = null
+                        deleteSubcatTarget = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = ExpenseColor)
+                ) { Text("삭제", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteSubcatTarget = null }) { Text("취소") }
+            },
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+        )
+    }
 
     if (showAddParentDialog) {
         CategoryInputDialog(
@@ -204,8 +227,8 @@ fun CategoryManagementScreen(
                 editSubcatTarget = null
             },
             onDelete = {
-                viewModel.deleteSubcategory(sub.id)
                 editSubcatTarget = null
+                deleteSubcatTarget = sub
             },
             onDismiss = { editSubcatTarget = null }
         )
@@ -324,7 +347,7 @@ fun CategoryManagementScreen(
                             onEditParent = { editParentTarget = parent },
                             onAddSubcat = { addSubcatParent = parent },
                             onEditSubcat = { editSubcatTarget = it },
-                            onDeleteSubcat = { viewModel.deleteSubcategory(it.id) },
+                            onDeleteSubcat = { deleteSubcatTarget = it },
                             onReorderSubcat = { from, to ->
                                 viewModel.reorderSubcategories(from, to, parent.key)
                             },

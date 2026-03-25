@@ -2,6 +2,7 @@ package com.myapp.budget.ui.statistics
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
 import com.myapp.budget.domain.model.Category
 import com.myapp.budget.domain.model.FixedExpense
 import com.myapp.budget.domain.model.TransactionType
@@ -97,4 +98,10 @@ class StatisticsViewModel(
             )
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatisticsUiState())
+
+    fun updateFixedExpense(id: Long, title: String, amount: Long, dayOfMonth: Int, note: String) {
+        viewModelScope.launch {
+            fixedExpenseRepository.update(id, title, amount, dayOfMonth, note)
+        }
+    }
 }

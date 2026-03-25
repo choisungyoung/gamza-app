@@ -232,6 +232,29 @@ fun AddEditScreen(
         )
     }
 
+    // ── Auto Register Dialog ──
+    if (viewModel.showAutoRegisterDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.skipAutoRegister() },
+            title = { Text("이전 달 거래 자동 추가", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "${viewModel.pendingAutoRegisterCount}개월치 누락된 거래가 있습니다.\n자동으로 추가할까요?"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.confirmAutoRegister() },
+                    colors = ButtonDefaults.textButtonColors(contentColor = PotatoBrown)
+                ) { Text("추가", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.skipAutoRegister() }) { Text("건너뛰기") }
+            },
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
     // ── Delete Dialog ──
     if (showDeleteDialog) {
         AlertDialog(

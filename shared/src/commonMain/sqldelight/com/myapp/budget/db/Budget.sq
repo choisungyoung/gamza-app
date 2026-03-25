@@ -65,6 +65,11 @@ insertFixedExpense:
 INSERT INTO FixedExpenseEntity (title, amount, category, asset, day_of_month, start_year, start_month, note, is_active)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1);
 
+updateFixedExpense:
+UPDATE FixedExpenseEntity
+SET title = ?, amount = ?, day_of_month = ?, note = ?
+WHERE id = ?;
+
 deleteFixedExpense:
 DELETE FROM FixedExpenseEntity WHERE id = ?;
 

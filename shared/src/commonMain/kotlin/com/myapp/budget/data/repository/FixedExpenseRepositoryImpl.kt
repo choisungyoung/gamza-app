@@ -38,6 +38,16 @@ class FixedExpenseRepositoryImpl(
         return queries.lastFixedExpenseRowId().executeAsOne()
     }
 
+    override suspend fun update(id: Long, title: String, amount: Long, dayOfMonth: Int, note: String) {
+        queries.updateFixedExpense(
+            title = title,
+            amount = amount,
+            day_of_month = dayOfMonth.toLong(),
+            note = note,
+            id = id
+        )
+    }
+
     override suspend fun delete(id: Long) {
         queries.deleteFixedExpense(id)
     }

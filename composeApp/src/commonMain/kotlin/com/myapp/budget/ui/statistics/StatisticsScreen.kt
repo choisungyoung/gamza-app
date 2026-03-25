@@ -17,9 +17,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,6 +38,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import com.myapp.budget.ui.components.EmojiText
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -113,7 +124,12 @@ fun StatisticsScreen(
             }
 
             item {
-                FixedExpenseListCard(fixedExpenses = state.fixedExpenses)
+                FixedExpenseListCard(
+                    fixedExpenses = state.fixedExpenses,
+                    onEdit = { fe, title, amount, day, note ->
+                        viewModel.updateFixedExpense(fe.id, title, amount, day, note)
+                    }
+                )
             }
         }
     }
@@ -313,7 +329,22 @@ private fun LegendItem(color: Color, label: String) {
 }
 
 @Composable
-private fun FixedExpenseListCard(fixedExpenses: List<FixedExpense>) {
+private fun FixedExpenseListCard(
+    fixedExpenses: List<FixedExpense>,
+    onEdit: (FixedExpense, title: String, amount: Long, dayOfMonth: Int, note: String) -> Unit
+) {
+    var editingItem by remember { mutableStateOf<FixedExpense?>(null) }
+
+    editingItem?.let { item ->
+        FixedExpenseEditDialog(
+            item = item,
+            onConfirm = { title, amount, day, note ->
+                onEdit(item, title, amount, day, note)
+                editingItem = null
+            },
+            onDismiss = { editingItem = null }
+        )
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -375,7 +406,9 @@ private fun FixedExpenseListCard(fixedExpenses: List<FixedExpense>) {
                     }
                     val cat = Category.fromCategoryStr(item.category)
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { editingItem = item },
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
@@ -412,6 +445,91 @@ private fun FixedExpenseListCard(fixedExpenses: List<FixedExpense>) {
             }
         }
     }
+}
+
+@Composable
+private fun FixedExpenseEditDialog(
+    item: FixedExpense,
+    onConfirm: (title: String, amount: Long, dayOfMonth: Int, note: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var title by remember { mutableStateOf(item.title) }
+    var amountStr by remember { mutableStateOf(item.amount.toString()) }
+    var dayStr by remember { mutableStateOf(item.dayOfMonth.toString()) }
+    var note by remember { mutableStateOf(item.note) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("고정 지출 수정", fontWeight = FontWeight.Bold, color = PotatoDeep) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("제목") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = PotatoBrown,
+                        focusedLabelColor = PotatoBrown
+                    )
+                )
+                OutlinedTextField(
+                    value = amountStr,
+                    onValueChange = { amountStr = it.filter(Char::isDigit) },
+                    label = { Text("금액 (원)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = PotatoBrown,
+                        focusedLabelColor = PotatoBrown
+                    )
+                )
+                OutlinedTextField(
+                    value = dayStr,
+                    onValueChange = { v -> dayStr = v.filter(Char::isDigit).take(2) },
+                    label = { Text("결제일 (1~31)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = PotatoBrown,
+                        focusedLabelColor = PotatoBrown
+                    )
+                )
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("메모") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = PotatoBrown,
+                        focusedLabelColor = PotatoBrown
+                    )
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val amount = amountStr.toLongOrNull() ?: return@TextButton
+                    val day = dayStr.toIntOrNull()?.coerceIn(1, 31) ?: return@TextButton
+                    if (title.isNotBlank()) onConfirm(title.trim(), amount, day, note.trim())
+                },
+                colors = ButtonDefaults.textButtonColors(contentColor = PotatoBrown)
+            ) { Text("수정", fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("취소") }
+        },
+        shape = RoundedCornerShape(20.dp)
+    )
 }
 
 private val categoryColors = listOf(

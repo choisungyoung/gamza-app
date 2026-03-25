@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import kotlinx.datetime.DatePeriod
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.minus
@@ -50,6 +51,12 @@ class AddEditViewModel(
     var date by mutableStateOf(Clock.System.todayIn(TimeZone.currentSystemDefault()))
     var time by mutableStateOf(Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).time.let { LocalTime(it.hour, it.minute) })
     var saveAsFixed by mutableStateOf(false)
+
+    var showAutoRegisterDialog by mutableStateOf(false)
+        private set
+    var pendingAutoRegisterCount by mutableStateOf(0)
+        private set
+    private var onSuccessCallback: (() -> Unit)? = null
 
     var transactionType by mutableStateOf(TransactionType.EXPENSE)
         private set
@@ -205,7 +212,7 @@ class AddEditViewModel(
             }
 
             val fixedExpenseId: Long? = if (saveAsFixed && transactionType == TransactionType.EXPENSE && editingId == null) {
-                val newId = fixedExpenseRepository.insert(
+                fixedExpenseRepository.insert(
                     FixedExpense(
                         title = title.trim(),
                         amount = amount,
@@ -217,32 +224,68 @@ class AddEditViewModel(
                         note = note.trim()
                     )
                 )
-                // 시작 월 이후 누락된 월 자동 등록
-                val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
-                fixedExpenseRepository.autoRegisterPending(today)
-                newId
             } else null
 
-            // 고정 지출로 저장한 경우 autoRegisterPending이 이미 시작 월 거래를 생성했으므로 별도 insert 불필요
-            if (fixedExpenseId == null) {
-                val transaction = Transaction(
-                    id = editingId ?: 0,
-                    title = title.trim(),
-                    amount = amount,
-                    type = transactionType,
-                    category = categoryStr,
-                    date = date,
-                    time = time,
-                    note = note.trim(),
-                    asset = selectedAsset,
-                    toAsset = toAsset,
-                    fixedExpenseId = null
-                )
-                if (editingId != null) repository.update(transaction)
-                else repository.insert(transaction)
+            // 시작 월 거래는 항상 직접 저장 (폼에서 입력한 내용)
+            val transaction = Transaction(
+                id = editingId ?: 0,
+                title = title.trim(),
+                amount = amount,
+                type = transactionType,
+                category = categoryStr,
+                date = date,
+                time = time,
+                note = note.trim(),
+                asset = selectedAsset,
+                toAsset = toAsset,
+                fixedExpenseId = fixedExpenseId
+            )
+            if (editingId != null) repository.update(transaction)
+            else repository.insert(transaction)
+
+            if (fixedExpenseId != null) {
+                // 시작 월 이후 누락된 월이 있으면 팝업으로 확인 후 자동 등록
+                val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
+                val pending = countPendingMonths(date.year, date.monthNumber, today)
+                if (pending > 0) {
+                    pendingAutoRegisterCount = pending
+                    onSuccessCallback = onSuccess
+                    showAutoRegisterDialog = true
+                } else {
+                    onSuccess()
+                }
+            } else {
+                onSuccess()
             }
-            onSuccess()
         }
+    }
+
+    fun confirmAutoRegister() {
+        viewModelScope.launch {
+            val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
+            fixedExpenseRepository.autoRegisterPending(today)
+            showAutoRegisterDialog = false
+            onSuccessCallback?.invoke()
+            onSuccessCallback = null
+        }
+    }
+
+    fun skipAutoRegister() {
+        showAutoRegisterDialog = false
+        onSuccessCallback?.invoke()
+        onSuccessCallback = null
+    }
+
+    private fun countPendingMonths(startYear: Int, startMonth: Int, today: LocalDate): Int {
+        var count = 0
+        var year = startYear
+        var month = startMonth + 1
+        if (month > 12) { year++; month = 1 }
+        while (year < today.year || (year == today.year && month <= today.monthNumber)) {
+            count++
+            if (month == 12) { year++; month = 1 } else month++
+        }
+        return count
     }
 
     fun delete(onSuccess: () -> Unit) {
