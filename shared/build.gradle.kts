@@ -66,7 +66,7 @@ sqldelight {
     databases {
         create("BudgetDatabase") {
             packageName.set("com.myapp.budget.db")
-            version = 4
+            version = 6
         }
     }
 }
