@@ -1,6 +1,8 @@
 package com.myapp.budget.ui.fixedexpense
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
@@ -58,6 +61,8 @@ fun FixedExpenseScreen(
     onBack: () -> Unit,
     viewModel: FixedExpenseViewModel = koinViewModel()
 ) {
+    BackHandler { onBack() }
+
     val fixedExpenses by viewModel.fixedExpenses.collectAsState()
 
     // 삭제 다이얼로그 상태
@@ -226,32 +231,58 @@ private fun FixedExpenseItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.SemiBold
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (item.isActive) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                )
+                if (!item.isActive) {
+                    androidx.compose.foundation.layout.Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "해제됨",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
             Spacer(Modifier.height(2.dp))
             Text(
                 text = "매월 ${item.dayOfMonth}일 · ${item.amount.formatAsWon()}",
                 style = MaterialTheme.typography.bodySmall,
-                color = ExpenseColor
+                color = if (item.isActive) ExpenseColor else ExpenseColor.copy(alpha = 0.4f)
             )
             if (item.asset.isNotEmpty()) {
                 Text(
                     text = item.asset,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                        alpha = if (item.isActive) 1f else 0.4f
+                    )
                 )
             }
         }
-        IconButton(onClick = onDeleteClick, modifier = Modifier.size(40.dp)) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = "삭제",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
-            )
+        if (item.isActive) {
+            IconButton(onClick = onDeleteClick, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "삭제",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }

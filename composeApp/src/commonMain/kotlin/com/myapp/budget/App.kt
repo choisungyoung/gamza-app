@@ -14,10 +14,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,9 +28,10 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Category
-import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -38,11 +41,14 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,11 +58,16 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.myapp.budget.platform.BackPressExitHandler
+import com.myapp.budget.platform.OnBackPressed
 import com.myapp.budget.ui.addedit.AddEditScreen
 import com.myapp.budget.ui.asset.AssetScreen
 import com.myapp.budget.ui.category.CategoryManagementScreen
-import com.myapp.budget.ui.components.EmojiText
+import com.myapp.budget.ui.components.PotatoCharacter
+import com.myapp.budget.ui.datamanagement.DataManagementScreen
+import com.myapp.budget.ui.dbviewer.DbViewerScreen
 import com.myapp.budget.ui.fixedexpense.FixedExpenseScreen
+import com.myapp.budget.ui.splash.SplashScreen
 import com.myapp.budget.ui.home.HomeScreen
 import com.myapp.budget.ui.search.SearchScreen
 import com.myapp.budget.ui.statistics.StatisticsScreen
@@ -74,21 +85,40 @@ sealed class Screen {
     data object Transactions : Screen()
     data object Statistics : Screen()
     data object Assets : Screen()
-    data object CategoryManagement : Screen()
-    data object FixedExpenses : Screen()
+    data class CategoryManagement(val previousScreen: Screen = Home) : Screen()
+    data class FixedExpenses(val previousScreen: Screen = Home) : Screen()
     data object Search : Screen()
-    data class AddEdit(val transactionId: Long? = null) : Screen()
+    data class DataManagement(val previousScreen: Screen = Home) : Screen()
+    data class DbViewer(val previousScreen: Screen = Home) : Screen()
+    data class AddEdit(val transactionId: Long? = null, val previousScreen: Screen = Home) : Screen()
 }
 
 @Composable
 fun App() {
     BudgetTheme {
+        var showSplash by remember { mutableStateOf(true) }
+
+        if (showSplash) {
+            SplashScreen(onFinished = { showSplash = false })
+            return@BudgetTheme
+        }
+
         var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
         var drawerOpen by remember { mutableStateOf(false) }
+        var isAdminMode by remember { mutableStateOf(false) }
+        var potatoClickCount by remember { mutableIntStateOf(0) }
+        var toastMessage by remember { mutableStateOf("") }
 
         // Stable lambda references — prevent screens from recomposing when drawerOpen changes
         val onNavigate: (Screen) -> Unit = remember { { screen -> currentScreen = screen } }
         val onMenuClick: () -> Unit = remember { { drawerOpen = true } }
+
+        val isMainTab = currentScreen is Screen.Home
+                || currentScreen is Screen.Transactions
+                || currentScreen is Screen.Statistics
+                || currentScreen is Screen.Assets
+        BackPressExitHandler(enabled = isMainTab && !drawerOpen)
+        OnBackPressed(enabled = drawerOpen) { drawerOpen = false }
 
         Box(modifier = Modifier.fillMaxSize()) {
             AppContent(
@@ -118,15 +148,63 @@ fun App() {
                 modifier = Modifier.align(Alignment.CenterEnd)
             ) {
                 AppDrawer(
+                    isAdminMode = isAdminMode,
+                    onPotatoClick = {
+                        val newCount = potatoClickCount + 1
+                        potatoClickCount = newCount
+                        if (!isAdminMode) {
+                            when (newCount) {
+                                7 -> toastMessage = "관리자 모드까지 3회 남았습니다"
+                                8 -> toastMessage = "관리자 모드까지 2회 남았습니다"
+                                9 -> toastMessage = "관리자 모드까지 1회 남았습니다"
+                            }
+                            if (newCount >= 10) {
+                                isAdminMode = true
+                                toastMessage = "관리자 모드가 활성화되었습니다"
+                            }
+                        }
+                    },
                     onCategoryManagementClick = {
                         drawerOpen = false
-                        currentScreen = Screen.CategoryManagement
+                        currentScreen = Screen.CategoryManagement(currentScreen)
                     },
-                    onFixedExpensesClick = {
+                    onDataManagementClick = {
                         drawerOpen = false
-                        currentScreen = Screen.FixedExpenses
+                        currentScreen = Screen.DataManagement(currentScreen)
+                    },
+                    onDbViewerClick = {
+                        drawerOpen = false
+                        currentScreen = Screen.DbViewer(currentScreen)
                     }
                 )
+            }
+
+            // 토스트 메시지
+            if (toastMessage.isNotEmpty()) {
+                LaunchedEffect(toastMessage) {
+                    delay(2000)
+                    toastMessage = ""
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = 100.dp),
+                    contentAlignment = Alignment.BottomCenter
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 32.dp)
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(Color(0xCC000000))
+                            .padding(horizontal = 20.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            text = toastMessage,
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
             }
         }
     }
@@ -142,14 +220,18 @@ private fun AppContent(
             && currentScreen !is Screen.CategoryManagement
             && currentScreen !is Screen.FixedExpenses
             && currentScreen !is Screen.Search
+            && currentScreen !is Screen.DataManagement
+            && currentScreen !is Screen.DbViewer
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets(0),
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar(
                     containerColor = Color.White,
-                    tonalElevation = 0.dp
+                    tonalElevation = 0.dp,
+                    windowInsets = WindowInsets.navigationBars
                 ) {
                     NavigationBarItem(
                         icon = { Icon(Icons.Default.Home, contentDescription = null, modifier = Modifier.size(22.dp)) },
@@ -210,9 +292,9 @@ private fun AppContent(
         AnimatedContent(
             targetState = currentScreen,
             transitionSpec = {
-                if (targetState is Screen.AddEdit || targetState is Screen.CategoryManagement || targetState is Screen.FixedExpenses || targetState is Screen.Search) {
+                if (targetState is Screen.AddEdit || targetState is Screen.CategoryManagement || targetState is Screen.FixedExpenses || targetState is Screen.Search || targetState is Screen.DataManagement || targetState is Screen.DbViewer) {
                     slideInHorizontally { it } togetherWith slideOutHorizontally { -it }
-                } else if (initialState is Screen.AddEdit || initialState is Screen.CategoryManagement || initialState is Screen.FixedExpenses || initialState is Screen.Search) {
+                } else if (initialState is Screen.AddEdit || initialState is Screen.CategoryManagement || initialState is Screen.FixedExpenses || initialState is Screen.Search || initialState is Screen.DataManagement || initialState is Screen.DbViewer) {
                     slideInHorizontally { -it } togetherWith slideOutHorizontally { it }
                 } else {
                     fadeIn() togetherWith fadeOut()
@@ -228,8 +310,8 @@ private fun AppContent(
                     onMenuClick = onMenuClick
                 )
                 is Screen.Transactions -> TransactionListScreen(
-                    onAddClick = { onNavigate(Screen.AddEdit()) },
-                    onTransactionClick = { id -> onNavigate(Screen.AddEdit(id)) },
+                    onAddClick = { onNavigate(Screen.AddEdit(previousScreen = Screen.Transactions)) },
+                    onTransactionClick = { id -> onNavigate(Screen.AddEdit(id, Screen.Transactions)) },
                     onSearchClick = { onNavigate(Screen.Search) },
                     onMenuClick = onMenuClick
                 )
@@ -240,18 +322,24 @@ private fun AppContent(
                     onMenuClick = onMenuClick
                 )
                 is Screen.CategoryManagement -> CategoryManagementScreen(
-                    onBack = { onNavigate(Screen.Home) }
+                    onBack = { onNavigate(screen.previousScreen) }
                 )
                 is Screen.FixedExpenses -> FixedExpenseScreen(
-                    onBack = { onNavigate(Screen.Home) }
+                    onBack = { onNavigate(screen.previousScreen) }
                 )
                 is Screen.Search -> SearchScreen(
                     onBack = { onNavigate(Screen.Transactions) },
                     onTransactionClick = { id -> onNavigate(Screen.AddEdit(id)) }
                 )
+                is Screen.DataManagement -> DataManagementScreen(
+                    onBack = { onNavigate(screen.previousScreen) }
+                )
+                is Screen.DbViewer -> DbViewerScreen(
+                    onBack = { onNavigate(screen.previousScreen) }
+                )
                 is Screen.AddEdit -> AddEditScreen(
                     transactionId = screen.transactionId,
-                    onBack = { onNavigate(Screen.Home) }
+                    onBack = { onNavigate(screen.previousScreen) }
                 )
             }
         }
@@ -260,8 +348,11 @@ private fun AppContent(
 
 @Composable
 private fun AppDrawer(
+    isAdminMode: Boolean,
+    onPotatoClick: () -> Unit,
     onCategoryManagementClick: () -> Unit,
-    onFixedExpensesClick: () -> Unit
+    onDataManagementClick: () -> Unit,
+    onDbViewerClick: () -> Unit
 ) {
     val gradient = Brush.horizontalGradient(
         colors = listOf(PotatoBrown, Color(0xFFFFBD5E), PotatoDark)
@@ -272,6 +363,10 @@ private fun AppDrawer(
             .fillMaxHeight()
             .fillMaxWidth(0.75f)
             .background(PotatoCream)
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() }
+            ) { /* 내부 빈 공간 클릭 흡수 — 스크림으로 전파 방지 */ }
     ) {
         // 그라데이션 헤더
         Box(
@@ -281,7 +376,31 @@ private fun AppDrawer(
                 .padding(horizontal = 24.dp, vertical = 32.dp)
         ) {
             Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)) {
-                EmojiText("🥔", fontSize = 40.sp)
+                // 감자 캐릭터 — 10회 클릭 시 관리자 모드 활성화
+                Box {
+                    PotatoCharacter(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() },
+                                onClick = onPotatoClick
+                            )
+                    )
+                    // 관리자 모드 활성화: 잠금 해제 표시
+                    if (isAdminMode) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .size(16.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFFFFD700)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("🔓", fontSize = 9.sp)
+                        }
+                    }
+                }
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = "감자 가계부",
@@ -290,9 +409,9 @@ private fun AppDrawer(
                     color = Color.White
                 )
                 Text(
-                    text = "내 돈을 알뜰하게 관리해요",
+                    text = if (isAdminMode) "🔒 관리자 모드 활성화됨" else "내 돈을 알뜰하게 관리해요",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.75f)
+                    color = if (isAdminMode) Color(0xFFFFD700) else Color.White.copy(alpha = 0.75f)
                 )
             }
         }
@@ -304,21 +423,47 @@ private fun AppDrawer(
             label = "카테고리 관리",
             onClick = onCategoryManagementClick
         )
+
+        HorizontalDivider(
+            modifier = Modifier.padding(horizontal = 20.dp),
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+        )
+
         DrawerMenuItem(
-            icon = Icons.Default.Repeat,
-            label = "고정 지출 관리",
-            onClick = onFixedExpensesClick
+            icon = Icons.Default.Storage,
+            label = "데이터 관리",
+            onClick = onDataManagementClick
         )
 
         HorizontalDivider(
             modifier = Modifier.padding(horizontal = 20.dp),
             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
         )
+
+        // 관리자 전용 메뉴
+        if (isAdminMode) {
+            DrawerMenuItem(
+                icon = Icons.Default.TableChart,
+                label = "DB 데이터 조회",
+                onClick = onDbViewerClick,
+                tint = Color(0xFF7B1FA2)
+            )
+
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 20.dp),
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+            )
+        }
     }
 }
 
 @Composable
-private fun DrawerMenuItem(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun DrawerMenuItem(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    tint: Color = PotatoBrown
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -331,14 +476,14 @@ private fun DrawerMenuItem(icon: ImageVector, label: String, onClick: () -> Unit
             modifier = Modifier
                 .size(36.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(PotatoBrown.copy(alpha = 0.12f)),
+                .background(tint.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 icon,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
-                tint = PotatoBrown
+                tint = tint
             )
         }
         Text(

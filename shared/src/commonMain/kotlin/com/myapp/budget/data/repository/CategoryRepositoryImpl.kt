@@ -15,14 +15,13 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
-import kotlinx.datetime.Clock
 
 class CategoryRepositoryImpl(private val db: BudgetDatabase) : CategoryRepository {
 
     private val q = db.budgetQueries
 
-    override fun getByParent(parent: String): Flow<List<UserCategory>> =
-        q.selectUserCategoriesByParent(parent)
+    override fun getByParent(parentId: Long): Flow<List<UserCategory>> =
+        q.selectUserCategoriesByParentId(parentId)
             .asFlow().mapToList(Dispatchers.Default)
             .map { it.map { e -> e.toModel() } }
 
@@ -37,14 +36,13 @@ class CategoryRepositoryImpl(private val db: BudgetDatabase) : CategoryRepositor
             .map { it.map { e -> e.toParentModel() } }
 
     override suspend fun insert(category: UserCategory) = withContext(Dispatchers.Default) {
-        val maxOrder = q.maxUserCategorySortOrder(category.parent).executeAsOne()
-        q.insertUserCategory(category.name, category.emoji, category.parent, category.type.name, maxOrder + 1)
+        val maxOrder = q.maxUserCategorySortOrder(category.parentId).executeAsOne()
+        q.insertUserCategory(category.name, category.emoji, category.parentId, category.type.name, maxOrder + 1)
     }
 
     override suspend fun insertParent(name: String, emoji: String, type: TransactionType) = withContext(Dispatchers.Default) {
         val maxOrder = q.maxParentSortOrderByType(type.name).executeAsOne()
-        val key = "USER_${Clock.System.now().toEpochMilliseconds()}"
-        q.insertParent(name.trim(), emoji.ifBlank { "📌" }, key, type.name, maxOrder + 1)
+        q.insertParent(name.trim(), emoji.ifBlank { "📌" }, type.name, maxOrder + 1)
     }
 
     override suspend fun update(id: Long, name: String, emoji: String) = withContext(Dispatchers.Default) {
@@ -79,8 +77,8 @@ class CategoryRepositoryImpl(private val db: BudgetDatabase) : CategoryRepositor
         q.updateParentOrder(current.sortOrder.toLong(), below.id)
     }
 
-    override suspend fun moveSubcategoryUp(id: Long, parentKey: String) = withContext(Dispatchers.Default) {
-        val subs = getByParent(parentKey).first()
+    override suspend fun moveSubcategoryUp(id: Long, parentId: Long) = withContext(Dispatchers.Default) {
+        val subs = getByParent(parentId).first()
         val index = subs.indexOfFirst { it.id == id }
         if (index <= 0) return@withContext
         val current = subs[index]
@@ -89,8 +87,8 @@ class CategoryRepositoryImpl(private val db: BudgetDatabase) : CategoryRepositor
         q.updateUserCategoryOrder(current.sortOrder.toLong(), above.id)
     }
 
-    override suspend fun moveSubcategoryDown(id: Long, parentKey: String) = withContext(Dispatchers.Default) {
-        val subs = getByParent(parentKey).first()
+    override suspend fun moveSubcategoryDown(id: Long, parentId: Long) = withContext(Dispatchers.Default) {
+        val subs = getByParent(parentId).first()
         val index = subs.indexOfFirst { it.id == id }
         if (index < 0 || index >= subs.size - 1) return@withContext
         val current = subs[index]
@@ -105,23 +103,24 @@ class CategoryRepositoryImpl(private val db: BudgetDatabase) : CategoryRepositor
 
         if (parentCount == 0L) {
             Category.entries.forEachIndexed { index, cat ->
-                q.insertParent(cat.displayName, cat.emoji, cat.name, cat.type.name, index.toLong())
+                q.insertParent(cat.displayName, cat.emoji, cat.type.name, index.toLong())
             }
         } else {
-            // 이체 카테고리가 없는 기존 사용자를 위해 TRANSFER parent만 별도 시딩
             val transferCount = q.countParentsByType(TransactionType.TRANSFER.name).executeAsOne()
             if (transferCount == 0L) {
                 val transferCategories = Category.entries.filter { it.type == TransactionType.TRANSFER }
                 transferCategories.forEachIndexed { index, cat ->
-                    q.insertParent(cat.displayName, cat.emoji, cat.name, cat.type.name, index.toLong())
+                    q.insertParent(cat.displayName, cat.emoji, cat.type.name, index.toLong())
                 }
             }
         }
 
         if (subCount == 0L) {
-            subcategoryDefaults.forEach { (parent, subs) ->
+            subcategoryDefaults.forEach { (cat, subs) ->
+                val parents = getParentsByType(cat.type).first()
+                val parent = parents.firstOrNull { it.name == cat.displayName } ?: return@forEach
                 subs.forEachIndexed { index, (name, emoji) ->
-                    q.insertUserCategory(name, emoji, parent.name, parent.type.name, index.toLong())
+                    q.insertUserCategory(name, emoji, parent.id, cat.type.name, index.toLong())
                 }
             }
         }
@@ -157,7 +156,7 @@ private fun UserCategoryEntity.toModel() = UserCategory(
     id = id,
     name = name,
     emoji = emoji,
-    parent = parent,
+    parentId = parent_id,
     type = TransactionType.valueOf(type),
     sortOrder = sort_order.toInt()
 )
@@ -166,7 +165,6 @@ private fun ParentCategoryEntity.toParentModel() = ParentCategory(
     id = id,
     name = name,
     emoji = emoji,
-    key = key,
     type = TransactionType.valueOf(type),
     sortOrder = sort_order.toInt()
 )

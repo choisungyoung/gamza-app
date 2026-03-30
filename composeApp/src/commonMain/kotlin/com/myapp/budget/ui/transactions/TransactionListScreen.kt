@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -45,7 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.myapp.budget.ui.components.PotatoCharacter
 import com.myapp.budget.ui.components.TransactionItem
 import com.myapp.budget.ui.theme.ExpenseColor
 import com.myapp.budget.ui.theme.IncomeColor
@@ -69,6 +71,7 @@ fun TransactionListScreen(
     val state by viewModel.uiState.collectAsState()
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0),
         topBar = {
             TopAppBar(
                 title = {
@@ -109,6 +112,7 @@ fun TransactionListScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onAddClick,
+                shape = CircleShape,
                 containerColor = PotatoDark,
                 contentColor = Color.White,
                 elevation = FloatingActionButtonDefaults.elevation(8.dp)
@@ -199,10 +203,16 @@ fun TransactionListScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text("🥔", fontSize = 40.sp)
+                        PotatoCharacter(modifier = Modifier.size(64.dp))
                         Text(
                             text = "이번 달 거래 내역이 없어요",
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = PotatoDark
+                        )
+                        Text(
+                            text = "+ 버튼으로 첫 거래를 추가해보세요!",
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )

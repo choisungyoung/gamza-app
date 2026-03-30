@@ -35,7 +35,8 @@ import com.myapp.budget.ui.components.EmojiText
 fun TransactionItem(
     transaction: Transaction,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showTime: Boolean = true
 ) {
     val category = Category.fromCategoryStr(transaction.category)
     val isIncome = transaction.type == TransactionType.INCOME
@@ -106,9 +107,10 @@ fun TransactionItem(
                 fontWeight = FontWeight.Bold,
                 color = amountColor
             )
+            val dateStr = "${transaction.date.monthNumber}/${transaction.date.dayOfMonth}(${transaction.date.dayOfWeekKo()})"
             val timeStr = "${transaction.time.hour.toString().padStart(2, '0')}:${transaction.time.minute.toString().padStart(2, '0')}"
             Text(
-                text = "${transaction.date.monthNumber}/${transaction.date.dayOfMonth}(${transaction.date.dayOfWeekKo()}) $timeStr",
+                text = if (showTime) "$dateStr $timeStr" else dateStr,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

@@ -58,6 +58,13 @@ class AddEditViewModel(
         private set
     private var onSuccessCallback: (() -> Unit)? = null
 
+    // 기존 거래의 고정지출 ID (수정 모드)
+    private var loadedFixedExpenseId: Long? = null
+
+    // Y→N 확인 다이얼로그
+    var showRemoveFixedDialog by mutableStateOf(false)
+        private set
+
     var transactionType by mutableStateOf(TransactionType.EXPENSE)
         private set
     var selectedParent by mutableStateOf<ParentCategory?>(null)
@@ -76,12 +83,12 @@ class AddEditViewModel(
         categoryRepository.getParentsByType(TransactionType.TRANSFER)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val _parentKeyFlow = MutableStateFlow("")
+    private val _parentIdFlow = MutableStateFlow(0L)
 
-    val subcategories: StateFlow<List<UserCategory>> = _parentKeyFlow
-        .flatMapLatest { key ->
-            if (key.isEmpty()) flow { emit(emptyList()) }
-            else categoryRepository.getByParent(key)
+    val subcategories: StateFlow<List<UserCategory>> = _parentIdFlow
+        .flatMapLatest { id ->
+            if (id == 0L) flow { emit(emptyList()) }
+            else categoryRepository.getByParent(id)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -97,12 +104,13 @@ class AddEditViewModel(
         toAsset = ""
         errorMessage = null
         saveAsFixed = false
+        loadedFixedExpenseId = null
         date = Clock.System.todayIn(TimeZone.currentSystemDefault())
         time = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).time.let { LocalTime(it.hour, it.minute) }
         transactionType = TransactionType.EXPENSE
         selectedSubcategory = null
         selectedParent = null
-        _parentKeyFlow.value = ""
+        _parentIdFlow.value = 0L
 
         viewModelScope.launch {
             categoryRepository.ensureDefaults()
@@ -121,15 +129,17 @@ class AddEditViewModel(
                     selectedAsset = transaction.asset
                     toAsset = transaction.toAsset
                     time = transaction.time
+                    loadedFixedExpenseId = transaction.fixedExpenseId
+                    saveAsFixed = transaction.fixedExpenseId != null
 
                     val parts = transaction.category.split("/", limit = 2)
-                    val parentKey = parts[0]
+                    val parentName = parts[0]
                     val parents = categoryRepository.getParentsByType(transaction.type).first()
-                    val parent = parents.firstOrNull { it.key == parentKey }
+                    val parent = parents.firstOrNull { it.name == parentName }
                     if (parent != null) {
                         selectParent(parent)
                         if (parts.size > 1) {
-                            val subs = categoryRepository.getByParent(parentKey).first()
+                            val subs = categoryRepository.getByParent(parent.id).first()
                             selectedSubcategory = subs.firstOrNull { it.name == parts[1] }
                         }
                     }
@@ -143,7 +153,7 @@ class AddEditViewModel(
         transactionType = newType
         selectedSubcategory = null
         selectedParent = null
-        _parentKeyFlow.value = ""
+        _parentIdFlow.value = 0L
         selectedAsset = ""
         toAsset = ""
         if (newType != TransactionType.EXPENSE) saveAsFixed = false
@@ -151,7 +161,7 @@ class AddEditViewModel(
 
     fun selectParent(parent: ParentCategory) {
         selectedParent = parent
-        _parentKeyFlow.value = parent.key
+        _parentIdFlow.value = parent.id
         selectedSubcategory = null
     }
 
@@ -161,7 +171,7 @@ class AddEditViewModel(
         viewModelScope.launch {
             categoryRepository.insert(
                 UserCategory(name = name.trim(), emoji = emoji.ifBlank { "📌" },
-                    parent = parent.key, type = transactionType)
+                    parentId = parent.id, type = transactionType)
             )
         }
     }
@@ -186,6 +196,39 @@ class AddEditViewModel(
     fun previousDay() { date = date.minus(DatePeriod(days = 1)) }
     fun nextDay() { date = date.plus(DatePeriod(days = 1)) }
 
+    /**
+     * 고정지출 토글 핸들러
+     * - Y→N: 확인 다이얼로그 표시
+     * - N→Y: 즉시 적용
+     */
+    fun onFixedExpenseToggled(newValue: Boolean) {
+        if (saveAsFixed && !newValue && loadedFixedExpenseId != null) {
+            // 기존 고정지출을 해제하려는 경우 → 확인 팝업
+            showRemoveFixedDialog = true
+        } else {
+            saveAsFixed = newValue
+        }
+    }
+
+    /** Y→N 확인: 이번달부터 고정지출 해제 */
+    fun confirmRemoveFixed() {
+        val feId = loadedFixedExpenseId ?: return
+        viewModelScope.launch {
+            // 고정지출 규칙 비활성화
+            fixedExpenseRepository.deactivate(feId)
+            // 이번달 1일부터 해당 고정지출 연결 해제
+            val firstOfMonth = LocalDate(date.year, date.monthNumber, 1).toString()
+            fixedExpenseRepository.detachFromDate(feId, firstOfMonth)
+            loadedFixedExpenseId = null
+            saveAsFixed = false
+            showRemoveFixedDialog = false
+        }
+    }
+
+    fun dismissRemoveFixedDialog() {
+        showRemoveFixedDialog = false
+    }
+
     fun save(onSuccess: () -> Unit) {
         val amount = rawAmount.toLongOrNull()
         if (title.isBlank()) { errorMessage = "제목을 입력해주세요."; return }
@@ -206,27 +249,47 @@ class AddEditViewModel(
 
         viewModelScope.launch {
             val categoryStr = if (transactionType == TransactionType.TRANSFER) {
-                selectedParent!!.key
+                selectedParent!!.name
             } else {
-                "${selectedParent!!.key}/${selectedSubcategory!!.name}"
+                "${selectedParent!!.name}/${selectedSubcategory!!.name}"
             }
 
-            val fixedExpenseId: Long? = if (saveAsFixed && transactionType == TransactionType.EXPENSE && editingId == null) {
-                fixedExpenseRepository.insert(
-                    FixedExpense(
-                        title = title.trim(),
-                        amount = amount,
-                        category = categoryStr,
-                        asset = selectedAsset,
-                        dayOfMonth = date.dayOfMonth,
-                        startYear = date.year,
-                        startMonth = date.monthNumber,
-                        note = note.trim()
+            val fixedExpenseId: Long? = when {
+                // 신규 거래 + 고정지출 등록
+                saveAsFixed && transactionType == TransactionType.EXPENSE && editingId == null -> {
+                    fixedExpenseRepository.insert(
+                        FixedExpense(
+                            title = title.trim(),
+                            amount = amount,
+                            category = categoryStr,
+                            asset = selectedAsset,
+                            dayOfMonth = date.dayOfMonth,
+                            startYear = date.year,
+                            startMonth = date.monthNumber,
+                            note = note.trim()
+                        )
                     )
-                )
-            } else null
+                }
+                // 수정 모드 + N→Y (새로 고정지출 등록)
+                saveAsFixed && editingId != null && loadedFixedExpenseId == null -> {
+                    fixedExpenseRepository.insert(
+                        FixedExpense(
+                            title = title.trim(),
+                            amount = amount,
+                            category = categoryStr,
+                            asset = selectedAsset,
+                            dayOfMonth = date.dayOfMonth,
+                            startYear = date.year,
+                            startMonth = date.monthNumber,
+                            note = note.trim()
+                        )
+                    )
+                }
+                // 수정 모드 + 기존 고정지출 유지
+                editingId != null && loadedFixedExpenseId != null -> loadedFixedExpenseId
+                else -> null
+            }
 
-            // 시작 월 거래는 항상 직접 저장 (폼에서 입력한 내용)
             val transaction = Transaction(
                 id = editingId ?: 0,
                 title = title.trim(),
@@ -244,7 +307,6 @@ class AddEditViewModel(
             else repository.insert(transaction)
 
             if (fixedExpenseId != null) {
-                // 시작 월 이후 누락된 월이 있으면 팝업으로 확인 후 자동 등록
                 val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
                 val pending = countPendingMonths(date.year, date.monthNumber, today)
                 if (pending > 0) {

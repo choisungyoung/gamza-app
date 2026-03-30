@@ -1,5 +1,6 @@
 package com.myapp.budget.ui.search
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -71,6 +72,8 @@ fun SearchScreen(
     onTransactionClick: (Long) -> Unit,
     viewModel: SearchViewModel = koinViewModel()
 ) {
+    BackHandler { onBack() }
+
     val results by viewModel.results.collectAsState()
     val query by viewModel.query.collectAsState()
     val fromDate by viewModel.fromDate.collectAsState()

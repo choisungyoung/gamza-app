@@ -2,23 +2,32 @@ package com.myapp.budget.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.myapp.budget.domain.model.Category
 import com.myapp.budget.domain.model.MonthlySummary
 import com.myapp.budget.domain.model.Transaction
 import com.myapp.budget.domain.model.TransactionType
 import com.myapp.budget.domain.repository.FixedExpenseRepository
 import com.myapp.budget.domain.repository.TransactionRepository
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
+import kotlinx.datetime.DatePeriod
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
+import kotlinx.datetime.plus
 import kotlinx.datetime.todayIn
 
 data class HomeUiState(
     val summary: MonthlySummary = MonthlySummary(),
     val recentTransactions: List<Transaction> = emptyList(),
+    val fixedExpenseTransactions: List<Transaction> = emptyList(),
+    val currentYear: Int = 0,
+    val currentMonthNum: Int = 0,
     val currentMonth: String = ""
 )
 
@@ -27,38 +36,68 @@ class HomeViewModel(
     private val fixedExpenseRepository: FixedExpenseRepository
 ) : ViewModel() {
 
+    private val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
+
     init {
         viewModelScope.launch {
-            val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
             fixedExpenseRepository.autoRegisterPending(today)
         }
     }
 
-    val uiState: StateFlow<HomeUiState> = repository.getAll()
-        .map { transactions ->
-            val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
-            val thisMonth = transactions.filter {
-                it.date.year == today.year && it.date.monthNumber == today.monthNumber
-            }
-            val income = thisMonth.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
-            val expense = thisMonth.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
-            val breakdown = thisMonth
-                .filter { it.type == TransactionType.EXPENSE && it.type != TransactionType.TRANSFER }
-                .groupBy { transaction ->
-                    val parent = com.myapp.budget.domain.model.Category.fromCategoryStr(transaction.category)
-                    val sub = com.myapp.budget.domain.model.Category.subcategoryOf(transaction.category)
-                    if (sub != null) "${parent.emoji} $sub" else "${parent.emoji} ${parent.displayName}"
-                }
-                .mapValues { (_, list) -> list.sumOf { it.amount } }
-                .entries.sortedByDescending { it.value }
-                .take(5)
-                .associate { it.key to it.value }
+    private val _selectedYear = MutableStateFlow(today.year)
+    private val _selectedMonth = MutableStateFlow(today.monthNumber)
 
-            HomeUiState(
-                summary = MonthlySummary(income, expense, income - expense, breakdown),
-                recentTransactions = transactions.take(5),
-                currentMonth = "${today.year}년 ${today.monthNumber}월"
-            )
+    val uiState: StateFlow<HomeUiState> = combine(
+        repository.getAll(),
+        _selectedYear,
+        _selectedMonth
+    ) { transactions, year, month ->
+        val thisMonth = transactions.filter {
+            it.date.year == year && it.date.monthNumber == month
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeUiState())
+        val income = thisMonth.filter { it.type == TransactionType.INCOME }.sumOf { it.amount }
+        val expense = thisMonth.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amount }
+        val breakdown = thisMonth
+            .filter { it.type == TransactionType.EXPENSE }
+            .groupBy { tx ->
+                val parent = Category.fromCategoryStr(tx.category)
+                val sub = Category.subcategoryOf(tx.category)
+                if (sub != null) "${parent.emoji} $sub" else "${parent.emoji} ${parent.displayName}"
+            }
+            .mapValues { (_, list) -> list.sumOf { it.amount } }
+            .entries.sortedByDescending { it.value }
+            .take(5)
+            .associate { it.key to it.value }
+
+        HomeUiState(
+            summary = MonthlySummary(income, expense, income - expense, breakdown),
+            recentTransactions = transactions.take(5),
+            fixedExpenseTransactions = thisMonth
+                .filter { it.fixedExpenseId != null }
+                .sortedWith(compareByDescending<Transaction> { it.date }.thenByDescending { it.time }),
+            currentYear = year,
+            currentMonthNum = month,
+            currentMonth = "${year}년 ${month}월"
+        )
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        HomeUiState(
+            currentYear = today.year,
+            currentMonthNum = today.monthNumber,
+            currentMonth = "${today.year}년 ${today.monthNumber}월"
+        )
+    )
+
+    fun previousMonth() {
+        val prev = LocalDate(_selectedYear.value, _selectedMonth.value, 1).minus(DatePeriod(months = 1))
+        _selectedYear.value = prev.year
+        _selectedMonth.value = prev.monthNumber
+    }
+
+    fun nextMonth() {
+        val next = LocalDate(_selectedYear.value, _selectedMonth.value, 1).plus(DatePeriod(months = 1))
+        _selectedYear.value = next.year
+        _selectedMonth.value = next.monthNumber
+    }
 }

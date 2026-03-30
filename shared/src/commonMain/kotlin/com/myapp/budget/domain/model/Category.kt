@@ -31,10 +31,12 @@ enum class Category(
 
     companion object {
         fun forType(type: TransactionType): List<Category> = entries.filter { it.type == type }
-        fun fromName(name: String): Category = entries.firstOrNull { it.name == name } ?: EXPENSE_OTHER
-        /** "FOOD/아침식사" 또는 "FOOD" 형식에서 부모 Category를 반환 */
-        fun fromCategoryStr(str: String): Category = fromName(str.substringBefore("/"))
-        /** "FOOD/아침식사" → "아침식사", "FOOD" → null */
+        /** "식비/아침식사" 또는 "식비" 형식에서 부모 Category를 반환 */
+        fun fromCategoryStr(str: String): Category {
+            val parentStr = str.substringBefore("/")
+            return entries.firstOrNull { it.displayName == parentStr } ?: EXPENSE_OTHER
+        }
+        /** "식비/아침식사" → "아침식사", "식비" → null */
         fun subcategoryOf(str: String): String? = str.substringAfter("/", "").takeIf { it.isNotEmpty() }
     }
 }

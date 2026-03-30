@@ -85,7 +85,7 @@ fun CategoryPickerDialog(
     var expandedParents by remember { mutableStateOf(setOf<Long>()) }
 
     // 소분류 추가 다이얼로그
-    var showAddSubFor by remember { mutableStateOf<Pair<String, TransactionType>?>(null) }
+    var showAddSubFor by remember { mutableStateOf<Pair<Long, TransactionType>?>(null) }
     var addSubName by remember { mutableStateOf("") }
     var addSubEmoji by remember { mutableStateOf("") }
 
@@ -100,7 +100,7 @@ fun CategoryPickerDialog(
     var editSubEmoji by remember { mutableStateOf("") }
 
     // ── 소분류 추가 다이얼로그 ──
-    showAddSubFor?.let { (parentKey, type) ->
+    showAddSubFor?.let { (parentId, type) ->
         AlertDialog(
             onDismissRequest = { showAddSubFor = null; addSubName = ""; addSubEmoji = "" },
             title = { Text("소분류 추가", fontWeight = FontWeight.Bold) },
@@ -121,7 +121,7 @@ fun CategoryPickerDialog(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.addSubcategory(addSubName, addSubEmoji, parentKey, type)
+                        viewModel.addSubcategory(addSubName, addSubEmoji, parentId, type)
                         showAddSubFor = null; addSubName = ""; addSubEmoji = ""
                     },
                     enabled = addSubName.isNotBlank(),
@@ -246,7 +246,7 @@ fun CategoryPickerDialog(
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     parents.forEachIndexed { index, parent ->
                         val isExpanded = parent.id in expandedParents
-                        val subs = categoriesMap[parent.key] ?: emptyList()
+                        val subs = categoriesMap[parent.id] ?: emptyList()
                         val isParentSelected = parent.id == selectedParentId
 
                         item(key = "parent_${parent.id}") {
@@ -359,14 +359,14 @@ fun CategoryPickerDialog(
                                 }
                             }
 
-                            item(key = "add_sub_${parent.key}") {
+                            item(key = "add_sub_${parent.id}") {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable {
                                             addSubName = ""
                                             addSubEmoji = ""
-                                            showAddSubFor = parent.key to transactionType
+                                            showAddSubFor = parent.id to transactionType
                                         }
                                         .padding(
                                             start = 52.dp, end = 16.dp,

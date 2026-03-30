@@ -2,6 +2,7 @@
 agp = "8.7.3"
 kotlin = "2.1.0"
 activity-compose = "1.9.3"
+core-splashscreen = "1.0.1"
 compose-multiplatform = "1.7.3"
 sqldelight = "2.0.2"
 koin = "4.0.0"
@@ -21,6 +22,7 @@ sqldelight-runtime = { module = "app.cash.sqldelight:runtime", version.ref = "sq
 
 # AndroidX
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity-compose" }
+androidx-core-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "core-splashscreen" }
 
 # Koin
 koin-core = { module = "io.insert-koin:koin-core", version.ref = "koin" }

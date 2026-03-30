@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  찐감자 캐릭터 — 100x100 뷰포트 (정규화 좌표계)
+  이 파일이 앱 내 캐릭터와 앱 아이콘의 단일 소스.
+  아이콘(ic_launcher_foreground.xml)은 이 좌표에 scale=0.65, offset=21.5 를 적용한 버전.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="100dp"
+    android:height="100dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+
+    <!-- 바닥 그림자 -->
+    <path
+        android:fillColor="#25C49A30"
+        android:pathData="M50,89 m-38,0 a38,7 0 1,0 76,0 a38,7 0 1,0 -76,0" />
+
+    <!-- 몸통 -->
+    <path
+        android:fillColor="#F5E6A0"
+        android:pathData="
+            M50,10
+            C82,8 96,26 94,52
+            C92,76 74,90 50,90
+            C26,90 8,76 6,52
+            C4,26 20,8 50,10 Z" />
+
+    <!-- 몸통 테두리 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#D4A843"
+        android:strokeWidth="3.5"
+        android:pathData="
+            M50,10
+            C82,8 96,26 94,52
+            C92,76 74,90 50,90
+            C26,90 8,76 6,52
+            C4,26 20,8 50,10 Z" />
+
+    <!-- 위 터진 틈 (찐감자) — 속살 -->
+    <path
+        android:fillColor="#EDD87A"
+        android:pathData="
+            M35,16
+            C40,10 60,10 65,16
+            C62,24 54,28 50,26
+            C46,28 38,24 35,16 Z" />
+
+    <!-- 위 터진 틈 — 테두리 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#D4A843"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M38,16 C43,10 57,10 62,16 C58,25 42,25 38,16" />
+
+    <!-- 표면 질감 점 -->
+    <path
+        android:fillColor="#45C49A30"
+        android:pathData="M22,44 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0" />
+    <path
+        android:fillColor="#38C49A30"
+        android:pathData="M75,50 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0" />
+    <path
+        android:fillColor="#35C49A30"
+        android:pathData="M30,70 m-1.8,0 a1.8,1.8 0 1,0 3.6,0 a1.8,1.8 0 1,0 -3.6,0" />
+    <path
+        android:fillColor="#35C49A30"
+        android:pathData="M68,72 m-1.8,0 a1.8,1.8 0 1,0 3.6,0 a1.8,1.8 0 1,0 -3.6,0" />
+
+    <!-- 왼쪽 눈 -->
+    <path
+        android:fillColor="#5C3317"
+        android:pathData="M37,50 m-5.5,0 a5.5,5.5 0 1,0 11,0 a5.5,5.5 0 1,0 -11,0" />
+    <!-- 왼쪽 눈 하이라이트 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M35.5,48.5 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0" />
+
+    <!-- 오른쪽 눈 -->
+    <path
+        android:fillColor="#5C3317"
+        android:pathData="M62,50 m-5.5,0 a5.5,5.5 0 1,0 11,0 a5.5,5.5 0 1,0 -11,0" />
+    <!-- 오른쪽 눈 하이라이트 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M60.5,48.5 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0" />
+
+    <!-- 볼터치 왼쪽 -->
+    <path
+        android:fillColor="#50FFB3B3"
+        android:pathData="M24,59 m-8,0 a8,6 0 1,0 16,0 a8,6 0 1,0 -16,0" />
+
+    <!-- 볼터치 오른쪽 -->
+    <path
+        android:fillColor="#50FFB3B3"
+        android:pathData="M75,59 m-8,0 a8,6 0 1,0 16,0 a8,6 0 1,0 -16,0" />
+
+    <!-- 미소 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#5C3317"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M36,63 C42,72 58,72 64,63" />
+
+</vector>

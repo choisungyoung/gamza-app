@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 시스템 스플래시 테마 (API 26~30) -->
+    <style name="AppTheme" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#FFF8DC</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.Base</item>
+    </style>
+
+    <!-- 스플래시 이후 실제 앱 테마: 윈도우 배경을 크림색으로 설정해 흰 화면 깜빡임 방지 -->
+    <style name="AppTheme.Base" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FFF8DC</item>
+    </style>
+</resources>

@@ -15,7 +15,7 @@ class FixedExpenseViewModel(
     private val transactionRepository: TransactionRepository
 ) : ViewModel() {
 
-    val fixedExpenses: StateFlow<List<FixedExpense>> = fixedExpenseRepository.getAll()
+    val fixedExpenses: StateFlow<List<FixedExpense>> = fixedExpenseRepository.getAllIncludingInactive()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun delete(id: Long, keepTransactions: Boolean, onSuccess: () -> Unit) {

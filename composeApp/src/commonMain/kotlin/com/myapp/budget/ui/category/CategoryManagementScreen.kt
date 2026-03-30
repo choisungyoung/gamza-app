@@ -1,5 +1,6 @@
 package com.myapp.budget.ui.category
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -112,6 +113,8 @@ fun CategoryManagementScreen(
     onBack: () -> Unit = {},
     viewModel: CategoryManagementViewModel = koinViewModel()
 ) {
+    BackHandler { onBack() }
+
     val selectedType by viewModel.selectedType.collectAsState()
     val expenseParents by viewModel.expenseParents.collectAsState()
     val incomeParents by viewModel.incomeParents.collectAsState()
@@ -209,7 +212,7 @@ fun CategoryManagementScreen(
             initialName = "",
             initialEmoji = "",
             onConfirm = { name, emoji ->
-                viewModel.addSubcategory(name, emoji, parent.key, selectedType)
+                viewModel.addSubcategory(name, emoji, parent.id, selectedType)
                 addSubcatParent = null
             },
             onDismiss = { addSubcatParent = null }
@@ -334,7 +337,7 @@ fun CategoryManagementScreen(
                     ) {
                         ParentCategoryCard(
                             parent = parent,
-                            subcategories = currentCategories[parent.key] ?: emptyList(),
+                            subcategories = currentCategories[parent.id] ?: emptyList(),
                             accentColor = accentColor,
                             isExpanded = expandedParents.contains(parent.id),
                             showAddSubcat = selectedType != TransactionType.TRANSFER,
@@ -349,7 +352,7 @@ fun CategoryManagementScreen(
                             onEditSubcat = { editSubcatTarget = it },
                             onDeleteSubcat = { deleteSubcatTarget = it },
                             onReorderSubcat = { from, to ->
-                                viewModel.reorderSubcategories(from, to, parent.key)
+                                viewModel.reorderSubcategories(from, to, parent.id)
                             },
                             parentDragHandleModifier = Modifier.pointerInput(index) {
                                 detectDragGesturesAfterLongPress(

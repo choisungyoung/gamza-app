@@ -30,21 +30,21 @@ class CategoryManagementViewModel(
         categoryRepository.getParentsByType(TransactionType.TRANSFER)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val expenseCategories: StateFlow<Map<String, List<UserCategory>>> =
+    val expenseCategories: StateFlow<Map<Long, List<UserCategory>>> =
         categoryRepository.getByType(TransactionType.EXPENSE)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
             .let { flow ->
                 kotlinx.coroutines.flow.combine(flow, expenseParents) { subs, _ ->
-                    subs.groupBy { it.parent }
+                    subs.groupBy { it.parentId }
                 }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
             }
 
-    val incomeCategories: StateFlow<Map<String, List<UserCategory>>> =
+    val incomeCategories: StateFlow<Map<Long, List<UserCategory>>> =
         categoryRepository.getByType(TransactionType.INCOME)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
             .let { flow ->
                 kotlinx.coroutines.flow.combine(flow, incomeParents) { subs, _ ->
-                    subs.groupBy { it.parent }
+                    subs.groupBy { it.parentId }
                 }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
             }
 
@@ -87,11 +87,11 @@ class CategoryManagementViewModel(
         viewModelScope.launch { categoryRepository.insertParent(name, emoji, selectedType.value) }
     }
 
-    fun addSubcategory(name: String, emoji: String, parentKey: String, type: TransactionType) {
+    fun addSubcategory(name: String, emoji: String, parentId: Long, type: TransactionType) {
         if (name.isBlank()) return
         viewModelScope.launch {
             categoryRepository.insert(
-                UserCategory(name = name.trim(), emoji = emoji.ifBlank { "📌" }, parent = parentKey, type = type)
+                UserCategory(name = name.trim(), emoji = emoji.ifBlank { "📌" }, parentId = parentId, type = type)
             )
         }
     }
@@ -105,28 +105,28 @@ class CategoryManagementViewModel(
         viewModelScope.launch { categoryRepository.delete(id) }
     }
 
-    fun moveSubcategoryUp(id: Long, parentKey: String) {
-        viewModelScope.launch { categoryRepository.moveSubcategoryUp(id, parentKey) }
+    fun moveSubcategoryUp(id: Long, parentId: Long) {
+        viewModelScope.launch { categoryRepository.moveSubcategoryUp(id, parentId) }
     }
 
-    fun moveSubcategoryDown(id: Long, parentKey: String) {
-        viewModelScope.launch { categoryRepository.moveSubcategoryDown(id, parentKey) }
+    fun moveSubcategoryDown(id: Long, parentId: Long) {
+        viewModelScope.launch { categoryRepository.moveSubcategoryDown(id, parentId) }
     }
 
-    fun reorderSubcategories(fromIndex: Int, toIndex: Int, parentKey: String) {
+    fun reorderSubcategories(fromIndex: Int, toIndex: Int, parentId: Long) {
         viewModelScope.launch {
             val subs = (when (selectedType.value) {
                 TransactionType.EXPENSE -> expenseCategories.value
                 TransactionType.INCOME -> incomeCategories.value
                 TransactionType.TRANSFER -> emptyMap()
-            })[parentKey] ?: return@launch
+            })[parentId] ?: return@launch
             if (fromIndex == toIndex) return@launch
             val id = subs.getOrNull(fromIndex)?.id ?: return@launch
             val steps = toIndex - fromIndex
             if (steps > 0) {
-                repeat(steps) { categoryRepository.moveSubcategoryDown(id, parentKey) }
+                repeat(steps) { categoryRepository.moveSubcategoryDown(id, parentId) }
             } else {
-                repeat(-steps) { categoryRepository.moveSubcategoryUp(id, parentKey) }
+                repeat(-steps) { categoryRepository.moveSubcategoryUp(id, parentId) }
             }
         }
     }

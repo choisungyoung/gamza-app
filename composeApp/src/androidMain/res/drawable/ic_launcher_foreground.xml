@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  앱 아이콘 포그라운드 (108dp adaptive icon)
+  potato_character.xml 의 100x100 좌표에 scale=0.65, offset=21.5 를 적용.
+  변환식: new = old * 0.65 + 21.5
+  동일한 좌표계에서 파생되므로 앱 내 캐릭터와 얼굴 비율이 정확히 일치.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 바닥 그림자 -->
+    <path
+        android:fillColor="#25C49A30"
+        android:pathData="M54,79 m-25,0 a25,5 0 1,0 50,0 a25,5 0 1,0 -50,0" />
+
+    <!-- 몸통: M50,10→(54,28) C82,8→(75,27) 96,26→(84,38) 94,52→(83,55) -->
+    <path
+        android:fillColor="#F5E6A0"
+        android:pathData="
+            M54,28
+            C75,27 84,38 83,55
+            C81,71 70,80 54,80
+            C38,80 27,71 25,55
+            C24,38 35,27 54,28 Z" />
+
+    <!-- 몸통 테두리 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#D4A843"
+        android:strokeWidth="3"
+        android:pathData="
+            M54,28
+            C75,27 84,38 83,55
+            C81,71 70,80 54,80
+            C38,80 27,71 25,55
+            C24,38 35,27 54,28 Z" />
+
+    <!-- 위 터진 틈: M35,16→(44,32) C40,10→(48,28) 60,10→(60,28) 65,16→(64,32) -->
+    <path
+        android:fillColor="#EDD87A"
+        android:pathData="
+            M44,32
+            C48,28 60,28 64,32
+            C62,37 57,39 54,38
+            C51,39 46,37 44,32 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#D4A843"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M46,32 C49,28 59,28 62,32 C59,38 49,38 46,32" />
+
+    <!-- 표면 질감 점 -->
+    <path
+        android:fillColor="#45C49A30"
+        android:pathData="M36,50 m-1.6,0 a1.6,1.6 0 1,0 3.2,0 a1.6,1.6 0 1,0 -3.2,0" />
+    <path
+        android:fillColor="#38C49A30"
+        android:pathData="M70,54 m-1.3,0 a1.3,1.3 0 1,0 2.6,0 a1.3,1.3 0 1,0 -2.6,0" />
+    <path
+        android:fillColor="#35C49A30"
+        android:pathData="M41,67 m-1.2,0 a1.2,1.2 0 1,0 2.4,0 a1.2,1.2 0 1,0 -2.4,0" />
+    <path
+        android:fillColor="#35C49A30"
+        android:pathData="M65,68 m-1.2,0 a1.2,1.2 0 1,0 2.4,0 a1.2,1.2 0 1,0 -2.4,0" />
+
+    <!-- 왼쪽 눈: cx=37→46, cy=50→54, r=5.5→3.6 -->
+    <path
+        android:fillColor="#5C3317"
+        android:pathData="M46,54 m-3.6,0 a3.6,3.6 0 1,0 7.2,0 a3.6,3.6 0 1,0 -7.2,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M45,53 m-1.3,0 a1.3,1.3 0 1,0 2.6,0 a1.3,1.3 0 1,0 -2.6,0" />
+
+    <!-- 오른쪽 눈: cx=62→62, cy=50→54, r=5.5→3.6 -->
+    <path
+        android:fillColor="#5C3317"
+        android:pathData="M62,54 m-3.6,0 a3.6,3.6 0 1,0 7.2,0 a3.6,3.6 0 1,0 -7.2,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M61,53 m-1.3,0 a1.3,1.3 0 1,0 2.6,0 a1.3,1.3 0 1,0 -2.6,0" />
+
+    <!-- 볼터치 왼쪽: cx=24→37, cy=59→60 -->
+    <path
+        android:fillColor="#50FFB3B3"
+        android:pathData="M37,60 m-5.2,0 a5.2,3.9 0 1,0 10.4,0 a5.2,3.9 0 1,0 -10.4,0" />
+
+    <!-- 볼터치 오른쪽: cx=75→70, cy=59→60 -->
+    <path
+        android:fillColor="#50FFB3B3"
+        android:pathData="M70,60 m-5.2,0 a5.2,3.9 0 1,0 10.4,0 a5.2,3.9 0 1,0 -10.4,0" />
+
+    <!-- 미소: M36,63→(45,62) C42,72→(49,68) 58,72→(59,68) 64,63→(63,62) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#5C3317"
+        android:strokeWidth="2.8"
+        android:strokeLineCap="round"
+        android:pathData="M45,62 C49,68 59,68 63,62" />
+
+</vector>

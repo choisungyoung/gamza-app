@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ (API 31+) 전용: android: 네임스페이스 native 속성 사용 -->
+<resources>
+    <style name="AppTheme" parent="Theme.SplashScreen">
+        <item name="android:windowSplashScreenBackground">#FFF8DC</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.Base</item>
+    </style>
+</resources>

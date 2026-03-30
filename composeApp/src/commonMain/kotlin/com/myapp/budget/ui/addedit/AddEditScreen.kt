@@ -3,6 +3,7 @@ package com.myapp.budget.ui.addedit
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -117,6 +119,8 @@ fun AddEditScreen(
             viewModel.errorMessage = null
         }
     }
+
+    BackHandler { onBack() }
 
     val accentColor = when (viewModel.transactionType) {
         TransactionType.EXPENSE -> ExpenseColor
@@ -274,6 +278,25 @@ fun AddEditScreen(
         )
     }
 
+    // ── 고정지출 해제 확인 다이얼로그 ──
+    if (viewModel.showRemoveFixedDialog) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissRemoveFixedDialog() },
+            title = { Text("고정지출 해제", fontWeight = FontWeight.Bold) },
+            text = { Text("이번달부터 고정지출에서 제외하시겠습니까?") },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.confirmRemoveFixed() },
+                    colors = ButtonDefaults.textButtonColors(contentColor = ExpenseColor)
+                ) { Text("제외", fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissRemoveFixedDialog() }) { Text("취소") }
+            },
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
     // ── Category Picker Dialog ──
     if (showCategoryPicker) {
         if (viewModel.transactionType == TransactionType.TRANSFER) {
@@ -364,6 +387,7 @@ fun AddEditScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(Color.White)
+                    .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
@@ -658,12 +682,12 @@ fun AddEditScreen(
                 }
                 RowDivider()
 
-                // 고정 지출 토글 (신규 지출 입력 시에만 표시)
-                if (viewModel.transactionType == TransactionType.EXPENSE && !viewModel.isEditing) {
+                // 고정 지출 토글 (지출 거래에만 표시)
+                if (viewModel.transactionType == TransactionType.EXPENSE) {
                     FormRow(label = "고정 지출") {
                         Switch(
                             checked = viewModel.saveAsFixed,
-                            onCheckedChange = { viewModel.saveAsFixed = it },
+                            onCheckedChange = { viewModel.onFixedExpenseToggled(it) },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = PotatoBrown,
                                 checkedTrackColor = PotatoBrown.copy(alpha = 0.4f)

@@ -3,6 +3,8 @@ package com.myapp.budget.di
 import com.myapp.budget.ui.addedit.AddEditViewModel
 import com.myapp.budget.ui.asset.AssetViewModel
 import com.myapp.budget.ui.category.CategoryManagementViewModel
+import com.myapp.budget.ui.datamanagement.DataManagementViewModel
+import com.myapp.budget.ui.dbviewer.DbViewerViewModel
 import com.myapp.budget.ui.fixedexpense.FixedExpenseViewModel
 import com.myapp.budget.ui.home.HomeViewModel
 import com.myapp.budget.ui.statistics.StatisticsViewModel
@@ -20,4 +22,6 @@ val appModule = module {
     viewModelOf(::AssetViewModel)
     viewModelOf(::SearchViewModel)
     viewModelOf(::FixedExpenseViewModel)
+    viewModelOf(::DataManagementViewModel)
+    viewModelOf(::DbViewerViewModel)
 }

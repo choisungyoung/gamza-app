@@ -1,0 +1,63 @@
+-- 1. Update TransactionEntity.category: "ENUM_KEY/sub" -> "parentName/sub" and "ENUM_KEY" -> "parentName"
+UPDATE TransactionEntity
+SET category = (
+    SELECT p.name || SUBSTR(TransactionEntity.category, LENGTH(p.key) + 1)
+    FROM ParentCategoryEntity p
+    WHERE TransactionEntity.category = p.key
+       OR TransactionEntity.category LIKE p.key || '/%'
+    LIMIT 1
+)
+WHERE EXISTS (
+    SELECT 1 FROM ParentCategoryEntity p
+    WHERE TransactionEntity.category = p.key
+       OR TransactionEntity.category LIKE p.key || '/%'
+);
+
+-- 2. Update FixedExpenseEntity.category the same way
+UPDATE FixedExpenseEntity
+SET category = (
+    SELECT p.name || SUBSTR(FixedExpenseEntity.category, LENGTH(p.key) + 1)
+    FROM ParentCategoryEntity p
+    WHERE FixedExpenseEntity.category = p.key
+       OR FixedExpenseEntity.category LIKE p.key || '/%'
+    LIMIT 1
+)
+WHERE EXISTS (
+    SELECT 1 FROM ParentCategoryEntity p
+    WHERE FixedExpenseEntity.category = p.key
+       OR FixedExpenseEntity.category LIKE p.key || '/%'
+);
+
+-- 3. Recreate UserCategoryEntity with parent_id instead of parent TEXT
+CREATE TABLE UserCategoryEntity_new (
+    id         INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    NOT NULL,
+    emoji      TEXT    NOT NULL DEFAULT '',
+    parent_id  INTEGER NOT NULL,
+    type       TEXT    NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+INSERT INTO UserCategoryEntity_new (id, name, emoji, parent_id, type, sort_order)
+SELECT u.id, u.name, u.emoji, p.id, u.type, u.sort_order
+FROM UserCategoryEntity u
+JOIN ParentCategoryEntity p ON u.parent = p.key;
+
+DROP TABLE UserCategoryEntity;
+ALTER TABLE UserCategoryEntity_new RENAME TO UserCategoryEntity;
+
+-- 4. Recreate ParentCategoryEntity without key column
+CREATE TABLE ParentCategoryEntity_new (
+    id         INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    NOT NULL,
+    emoji      TEXT    NOT NULL DEFAULT '',
+    type       TEXT    NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+INSERT INTO ParentCategoryEntity_new (id, name, emoji, type, sort_order)
+SELECT id, name, emoji, type, sort_order
+FROM ParentCategoryEntity;
+
+DROP TABLE ParentCategoryEntity;
+ALTER TABLE ParentCategoryEntity_new RENAME TO ParentCategoryEntity;

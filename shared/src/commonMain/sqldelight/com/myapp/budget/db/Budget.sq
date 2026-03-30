@@ -61,6 +61,9 @@ CREATE TABLE FixedExpenseEntity (
 selectAllFixedExpenses:
 SELECT * FROM FixedExpenseEntity WHERE is_active = 1 ORDER BY id ASC;
 
+selectAllFixedExpensesIncludingInactive:
+SELECT * FROM FixedExpenseEntity ORDER BY is_active DESC, id ASC;
+
 insertFixedExpense:
 INSERT INTO FixedExpenseEntity (title, amount, category, asset, day_of_month, start_year, start_month, note, is_active)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1);
@@ -73,26 +76,33 @@ WHERE id = ?;
 deleteFixedExpense:
 DELETE FROM FixedExpenseEntity WHERE id = ?;
 
+deactivateFixedExpense:
+UPDATE FixedExpenseEntity SET is_active = 0 WHERE id = ?;
+
 lastFixedExpenseRowId:
 SELECT last_insert_rowid();
+
+detachFixedExpenseFromDate:
+UPDATE TransactionEntity SET fixed_expense_id = NULL
+WHERE fixed_expense_id = ? AND date >= ?;
 
 CREATE TABLE UserCategoryEntity (
     id         INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     name       TEXT    NOT NULL,
     emoji      TEXT    NOT NULL DEFAULT '',
-    parent     TEXT    NOT NULL,
+    parent_id  INTEGER NOT NULL,
     type       TEXT    NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0
 );
 
-selectUserCategoriesByParent:
-SELECT * FROM UserCategoryEntity WHERE parent = ? ORDER BY sort_order ASC, id ASC;
+selectUserCategoriesByParentId:
+SELECT * FROM UserCategoryEntity WHERE parent_id = ? ORDER BY sort_order ASC, id ASC;
 
 selectUserCategoriesByType:
 SELECT * FROM UserCategoryEntity WHERE type = ? ORDER BY sort_order ASC, id ASC;
 
 insertUserCategory:
-INSERT INTO UserCategoryEntity (name, emoji, parent, type, sort_order) VALUES (?, ?, ?, ?, ?);
+INSERT INTO UserCategoryEntity (name, emoji, parent_id, type, sort_order) VALUES (?, ?, ?, ?, ?);
 
 updateUserCategory:
 UPDATE UserCategoryEntity SET name = ?, emoji = ? WHERE id = ?;
@@ -107,13 +117,12 @@ updateUserCategoryOrder:
 UPDATE UserCategoryEntity SET sort_order = ? WHERE id = ?;
 
 maxUserCategorySortOrder:
-SELECT COALESCE(MAX(sort_order), -1) FROM UserCategoryEntity WHERE parent = ?;
+SELECT COALESCE(MAX(sort_order), -1) FROM UserCategoryEntity WHERE parent_id = ?;
 
 CREATE TABLE ParentCategoryEntity (
     id          INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     name        TEXT    NOT NULL,
     emoji       TEXT    NOT NULL DEFAULT '',
-    key         TEXT    NOT NULL,
     type        TEXT    NOT NULL,
     sort_order  INTEGER NOT NULL DEFAULT 0
 );
@@ -121,8 +130,11 @@ CREATE TABLE ParentCategoryEntity (
 selectParentsByType:
 SELECT * FROM ParentCategoryEntity WHERE type = ? ORDER BY sort_order ASC, id ASC;
 
+selectParentById:
+SELECT * FROM ParentCategoryEntity WHERE id = ?;
+
 insertParent:
-INSERT INTO ParentCategoryEntity (name, emoji, key, type, sort_order) VALUES (?, ?, ?, ?, ?);
+INSERT INTO ParentCategoryEntity (name, emoji, type, sort_order) VALUES (?, ?, ?, ?);
 
 updateParent:
 UPDATE ParentCategoryEntity SET name = ?, emoji = ? WHERE id = ?;
