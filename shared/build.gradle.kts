@@ -38,6 +38,7 @@ kotlin {
             implementation(libs.ktor.client.logging)
             implementation(libs.supabase.auth)
             implementation(libs.supabase.postgrest)
+            implementation(libs.supabase.realtime)
             implementation(libs.supabase.compose.auth)
         }
         androidMain.dependencies {
@@ -69,7 +70,7 @@ sqldelight {
     databases {
         create("BudgetDatabase") {
             packageName.set("com.myapp.budget.db")
-            version = 9
+            version = 11
         }
     }
 }

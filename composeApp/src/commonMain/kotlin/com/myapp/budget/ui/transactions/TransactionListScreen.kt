@@ -37,6 +37,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -69,6 +70,7 @@ fun TransactionListScreen(
     viewModel: TransactionListViewModel = koinViewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
 
     Scaffold(
         contentWindowInsets = WindowInsets(0),
@@ -194,66 +196,73 @@ fun TransactionListScreen(
             }
 
             // 거래 목록
-            if (state.transactions.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = { viewModel.refresh() },
+                modifier = Modifier.fillMaxSize()
+            ) {
+                if (state.transactions.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
                     ) {
-                        PotatoCharacter(modifier = Modifier.size(64.dp))
-                        Text(
-                            text = "이번 달 거래 내역이 없어요",
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = PotatoDark
-                        )
-                        Text(
-                            text = "+ 버튼으로 첫 거래를 추가해보세요!",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val grouped = state.transactions.groupBy { it.date }
-                    grouped.entries.sortedByDescending { it.key }.forEach { (date, txList) ->
-                        item(key = date.toString()) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(RoundedCornerShape(3.dp))
-                                        .background(PotatoBrown)
-                                )
-                                Text(
-                                    text = "${date.year}년 ${date.monthNumber}월 ${date.dayOfMonth}일 (${date.dayOfWeekKo()})",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = PotatoDark
-                                )
-                            }
-                        }
-                        items(txList, key = { it.id }) { tx ->
-                            TransactionItem(
-                                transaction = tx,
-                                onClick = { onTransactionClick(tx.id) }
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            PotatoCharacter(modifier = Modifier.size(64.dp))
+                            Text(
+                                text = "이번 달 거래 내역이 없어요",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = PotatoDark
+                            )
+                            Text(
+                                text = "+ 버튼으로 첫 거래를 추가해보세요!",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
                             )
                         }
-                        item { Spacer(Modifier.height(4.dp)) }
+                    }
+                } else {
+                    LazyColumn(
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        val grouped = state.transactions.groupBy { it.date }
+                        grouped.entries.sortedByDescending { it.key }.forEach { (date, txList) ->
+                            item(key = date.toString()) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(RoundedCornerShape(3.dp))
+                                            .background(PotatoBrown)
+                                    )
+                                    Text(
+                                        text = "${date.year}년 ${date.monthNumber}월 ${date.dayOfMonth}일 (${date.dayOfWeekKo()})",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = PotatoDark
+                                    )
+                                }
+                            }
+                            items(txList, key = { it.id }) { tx ->
+                                TransactionItem(
+                                    transaction = tx,
+                                    onClick = { onTransactionClick(tx.id) }
+                                )
+                            }
+                            item { Spacer(Modifier.height(4.dp)) }
+                        }
                     }
                 }
             }

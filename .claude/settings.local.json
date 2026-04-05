@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(adb devices:*)",
+      "Bash(xcrun simctl:*)",
+      "Bash(./gradlew :composeApp:installDebug 2>&1)",
+      "Bash(~/Library/Android/sdk/platform-tools/adb shell:*)",
+      "Bash(~/Library/Android/sdk/platform-tools/adb devices:*)",
+      "Bash(find:*)",
+      "Bash(./gradlew :composeApp:assembleDebug 2>&1 | grep -E \"error:|ERROR|BUILD\" | head -20)",
+      "Bash(~/Library/Android/sdk/platform-tools/adb install:*)",
+      "Bash(./gradlew :composeApp:assembleDebug 2>&1 | grep -E \"error:|BUILD\" | head -10)",
+      "Bash(gh repo:*)",
+      "Bash(git:*)",
+      "Bash(./gradlew :composeApp:assembleDebug)",
+      "Bash(./gradlew :composeApp:compileKotlinIosSimulatorArm64)",
+      "Bash(adb install:*)",
+      "Bash(~/Library/Android/sdk/platform-tools/adb logcat:*)",
+      "Bash(sed -i '' 's/import androidx\\\\.activity\\\\.compose\\\\.BackHandler/import com.myapp.budget.platform.OnBackPressed/' /Users/sungyoung/IdeaProjects/gamza-app/composeApp/src/commonMain/kotlin/com/myapp/budget/ui/addedit/AddEditScreen.kt /Users/sungyoung/IdeaProjects/gamza-app/composeApp/src/commonMain/kotlin/com/myapp/budget/ui/category/CategoryManagementScreen.kt /Users/sungyoung/IdeaProjects/gamza-app/composeApp/src/commonMain/kotlin/com/myapp/budget/ui/datamanagement/DataManagementScreen.kt /Users/sungyoung/IdeaProjects/gamza-app/composeApp/src/commonMain/kotlin/com/myapp/budget/ui/fixedexpense/FixedExpenseScreen.kt /Users/sungyoung/IdeaProjects/gamza-app/composeApp/src/commonMain/kotlin/com/myapp/budget/ui/search/SearchScreen.kt)",
+      "Bash(__NEW_LINE_c6df68d0873d6670__ sed:*)",
+      "Bash(xargs ls:*)",
+      "Read(//Users/sungyoung/.gradle/caches/8.10/transforms/**)",
+      "Bash(jar -tf ecfca437302451e8f110b4e7164291db/transformed/compose-auth-debug-runtime.jar)",
+      "Bash(npm run *)",
+      "Bash(git *)",
+      "Bash(ls *)",
+      "Bash(grep *)",
+      "Write(*)",
+      "Read(*)",
+      "Bash(./gradlew :composeApp:compileDebugKotlinAndroid)"
+    ]
+  },
+  "plansDirectory": ".claude/plans"
+}

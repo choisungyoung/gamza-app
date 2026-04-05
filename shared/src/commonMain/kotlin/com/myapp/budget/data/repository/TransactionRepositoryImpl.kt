@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalTime
@@ -33,132 +34,85 @@ class TransactionRepositoryImpl(
             if (bookId.isNotBlank()) {
                 queries.selectByBookId(bookId).asFlow().mapToList(Dispatchers.Default)
             } else {
-                queries.selectAll().asFlow().mapToList(Dispatchers.Default)
+                flowOf(emptyList())
             }
         }.map { list -> list.map { it.toModel() } }
 
     override suspend fun insert(transaction: Transaction) {
-        val bookId = sessionManager.activeBookId ?: ""
+        val bookId = sessionManager.activeBookId
+            ?: error("활성화된 가계부가 없습니다. 로그인이 필요합니다.")
         val createdBy = sessionManager.currentUser.value?.id ?: ""
-        if (bookId.isNotBlank()) {
-            queries.insertWithBookAndCreator(
-                title = transaction.title,
-                amount = transaction.amount,
-                type = transaction.type.name,
-                category = transaction.category,
-                category_emoji = transaction.categoryEmoji,
-                date = transaction.date.toString(),
-                time = transaction.time.toString(),
-                note = transaction.note,
-                asset = transaction.asset,
-                to_asset = transaction.toAsset,
-                fixed_expense_id = transaction.fixedExpenseId,
-                book_id = bookId,
-                created_by = createdBy,
+
+        // 서버에 먼저 저장
+        val dto = supabase.postgrest.from("transactions").insert(
+            TransactionRemoteDto(
+                bookId = bookId, title = transaction.title,
+                amount = transaction.amount, type = transaction.type.name,
+                category = transaction.category, date = transaction.date.toString(),
+                time = transaction.time.toString(), note = transaction.note,
+                asset = transaction.asset, toAsset = transaction.toAsset,
+                createdBy = createdBy, categoryEmoji = transaction.categoryEmoji
             )
-            val localId = queries.lastInsertRowId().executeAsOne()
-            runCatching {
-                val dto = supabase.postgrest.from("transactions").insert(
-                    TransactionRemoteDto(bookId = bookId, title = transaction.title,
-                        amount = transaction.amount, type = transaction.type.name,
-                        category = transaction.category, date = transaction.date.toString(),
-                        time = transaction.time.toString(), note = transaction.note,
-                        asset = transaction.asset, toAsset = transaction.toAsset, createdBy = createdBy,
-                        categoryEmoji = transaction.categoryEmoji)
-                ) { select() }.decodeSingle<TransactionRemoteDto>()
-                queries.updateTransactionRemoteId(dto.id, localId)
-            }
-        } else if (createdBy.isNotBlank()) {
-            queries.insertWithCreator(
-                title = transaction.title,
-                amount = transaction.amount,
-                type = transaction.type.name,
-                category = transaction.category,
-                category_emoji = transaction.categoryEmoji,
-                date = transaction.date.toString(),
-                time = transaction.time.toString(),
-                note = transaction.note,
-                asset = transaction.asset,
-                to_asset = transaction.toAsset,
-                fixed_expense_id = transaction.fixedExpenseId,
-                created_by = createdBy,
-            )
-        } else {
-            queries.insert(
-                title = transaction.title,
-                amount = transaction.amount,
-                type = transaction.type.name,
-                category = transaction.category,
-                category_emoji = transaction.categoryEmoji,
-                date = transaction.date.toString(),
-                time = transaction.time.toString(),
-                note = transaction.note,
-                asset = transaction.asset,
-                to_asset = transaction.toAsset,
-                fixed_expense_id = transaction.fixedExpenseId
-            )
-        }
+        ) { select() }.decodeSingle<TransactionRemoteDto>()
+
+        // 로컬 캐시 업데이트
+        queries.insertWithBookAndCreator(
+            title = transaction.title, amount = transaction.amount,
+            type = transaction.type.name, category = transaction.category,
+            category_emoji = transaction.categoryEmoji, date = transaction.date.toString(),
+            time = transaction.time.toString(), note = transaction.note,
+            asset = transaction.asset, to_asset = transaction.toAsset,
+            fixed_expense_id = transaction.fixedExpenseId,
+            book_id = bookId, created_by = createdBy,
+        )
+        val localId = queries.lastInsertRowId().executeAsOne()
+        queries.updateTransactionRemoteId(dto.id, localId)
     }
 
     override suspend fun update(transaction: Transaction) {
+        val bookId = sessionManager.activeBookId ?: return
+        val createdBy = sessionManager.currentUser.value?.id ?: ""
+
         queries.update(
-            title = transaction.title,
-            amount = transaction.amount,
-            type = transaction.type.name,
-            category = transaction.category,
-            category_emoji = transaction.categoryEmoji,
-            date = transaction.date.toString(),
-            time = transaction.time.toString(),
-            note = transaction.note,
-            asset = transaction.asset,
-            to_asset = transaction.toAsset,
-            fixed_expense_id = transaction.fixedExpenseId,
-            id = transaction.id
+            title = transaction.title, amount = transaction.amount,
+            type = transaction.type.name, category = transaction.category,
+            category_emoji = transaction.categoryEmoji, date = transaction.date.toString(),
+            time = transaction.time.toString(), note = transaction.note,
+            asset = transaction.asset, to_asset = transaction.toAsset,
+            fixed_expense_id = transaction.fixedExpenseId, id = transaction.id
         )
+
         val remoteId = queries.selectTransactionRemoteId(transaction.id).executeAsOneOrNull()
         if (!remoteId.isNullOrBlank()) {
-            // 이미 서버에 있는 경우: UPDATE
-            runCatching {
-                supabase.postgrest.from("transactions").update({
-                    set("title", transaction.title)
-                    set("amount", transaction.amount)
-                    set("type", transaction.type.name)
-                    set("category", transaction.category)
-                    set("date", transaction.date.toString())
-                    set("tx_time", transaction.time.toString())
-                    set("note", transaction.note)
-                    set("asset", transaction.asset)
-                    set("to_asset", transaction.toAsset)
-                }) { filter { eq("id", remoteId) } }
-            }
+            supabase.postgrest.from("transactions").update({
+                set("title", transaction.title); set("amount", transaction.amount)
+                set("type", transaction.type.name); set("category", transaction.category)
+                set("date", transaction.date.toString()); set("tx_time", transaction.time.toString())
+                set("note", transaction.note); set("asset", transaction.asset)
+                set("to_asset", transaction.toAsset)
+            }) { filter { eq("id", remoteId) } }
         } else {
-            // remoteId 없음 = 오프라인 중 생성된 거래 → 서버에 새로 INSERT
-            val bookId = sessionManager.activeBookId ?: return
-            val createdBy = sessionManager.currentUser.value?.id ?: return
-            runCatching {
-                val dto = supabase.postgrest.from("transactions").insert(
-                    TransactionRemoteDto(
-                        bookId = bookId, title = transaction.title,
-                        amount = transaction.amount, type = transaction.type.name,
-                        category = transaction.category, date = transaction.date.toString(),
-                        time = transaction.time.toString(), note = transaction.note,
-                        asset = transaction.asset, toAsset = transaction.toAsset,
-                        createdBy = createdBy, categoryEmoji = transaction.categoryEmoji,
-                    )
-                ) { select() }.decodeSingle<TransactionRemoteDto>()
-                queries.updateTransactionRemoteId(dto.id, transaction.id)
-            }
+            // remote_id 없는 레거시 레코드 → 서버에 새로 INSERT
+            val dto = supabase.postgrest.from("transactions").insert(
+                TransactionRemoteDto(
+                    bookId = bookId, title = transaction.title,
+                    amount = transaction.amount, type = transaction.type.name,
+                    category = transaction.category, date = transaction.date.toString(),
+                    time = transaction.time.toString(), note = transaction.note,
+                    asset = transaction.asset, toAsset = transaction.toAsset,
+                    createdBy = createdBy, categoryEmoji = transaction.categoryEmoji,
+                )
+            ) { select() }.decodeSingle<TransactionRemoteDto>()
+            queries.updateTransactionRemoteId(dto.id, transaction.id)
         }
     }
 
     override suspend fun delete(id: Long) {
         val remoteId = queries.selectTransactionRemoteId(id).executeAsOneOrNull()
-        queries.deleteById(id)
         if (!remoteId.isNullOrBlank()) {
-            runCatching {
-                supabase.postgrest.from("transactions").delete { filter { eq("id", remoteId) } }
-            }
+            supabase.postgrest.from("transactions").delete { filter { eq("id", remoteId) } }
         }
+        queries.deleteById(id)
     }
 
     override suspend fun getById(id: Long): Transaction? =

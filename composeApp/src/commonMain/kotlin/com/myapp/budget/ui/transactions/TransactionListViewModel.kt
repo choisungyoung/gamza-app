@@ -2,14 +2,18 @@ package com.myapp.budget.ui.transactions
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.myapp.budget.domain.SessionManager
 import com.myapp.budget.domain.model.Transaction
 import com.myapp.budget.domain.model.TransactionType
+import com.myapp.budget.domain.repository.BookRepository
 import com.myapp.budget.domain.repository.TransactionRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
@@ -30,8 +34,22 @@ data class TransactionListUiState(
 )
 
 class TransactionListViewModel(
-    private val repository: TransactionRepository
+    private val repository: TransactionRepository,
+    private val bookRepository: BookRepository,
+    private val sessionManager: SessionManager,
 ) : ViewModel() {
+
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
+    fun refresh() {
+        val bookId = sessionManager.activeBookId ?: return
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            runCatching { bookRepository.syncBookData(bookId) }
+            _isRefreshing.value = false
+        }
+    }
 
     private val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
     private val _year = MutableStateFlow(today.year)

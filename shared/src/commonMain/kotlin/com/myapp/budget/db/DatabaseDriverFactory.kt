@@ -8,5 +8,7 @@ expect class DatabaseDriverFactory {
 
 fun createDatabase(driverFactory: DatabaseDriverFactory): BudgetDatabase {
     val driver = driverFactory.createDriver()
-    return BudgetDatabase(driver)
+    val db = BudgetDatabase(driver)
+    BudgetDatabaseSeeder.seedIfNeeded(db)
+    return db
 }

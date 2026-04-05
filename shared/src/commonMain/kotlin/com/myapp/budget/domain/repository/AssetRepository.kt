@@ -16,5 +16,4 @@ interface AssetRepository {
     suspend fun moveGroupDown(id: Long)
     suspend fun moveAssetUp(id: Long, groupKey: String)
     suspend fun moveAssetDown(id: Long, groupKey: String)
-    suspend fun ensureDefaults()
 }

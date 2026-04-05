@@ -20,6 +20,4 @@ interface BookRepository {
     suspend fun getOwnerDisplayNames(): Map<String, String>
     suspend fun syncBooks()
     suspend fun syncBookData(bookId: String)
-    suspend fun backfillBookId(bookId: String)
-    suspend fun migrateOfflineData(): Book?
 }

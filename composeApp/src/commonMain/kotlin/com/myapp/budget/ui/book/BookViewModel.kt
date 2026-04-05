@@ -71,9 +71,11 @@ class BookViewModel(
         viewModelScope.launch {
             runCatching { bookRepository.selectBook(book.id) }
                 .onSuccess {
+                    // sync 먼저 완료 후 activeBook 전환 → pullBookData의 delete→insert 사이에
+                    // flatMapLatest가 빈 리스트를 방출하는 현상 방지
+                    runCatching { bookRepository.syncBookData(book.id) }
                     sessionManager.setActiveBook(book)
                     sessionManager.notifyBookSwitched(book)
-                    runCatching { bookRepository.syncBookData(book.id) }
                 }
         }
     }

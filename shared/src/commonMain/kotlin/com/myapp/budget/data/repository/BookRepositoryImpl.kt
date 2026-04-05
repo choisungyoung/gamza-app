@@ -229,11 +229,21 @@ class BookRepositoryImpl(
                 role = dto.role, joined_at = dto.joinedAt,
             )
         }
-        return dtos.map { dto ->
+        // 현재 로그인된 사용자 정보를 닉네임 폴백으로 활용
+        val localUser = queries.selectLocalUser().executeAsOneOrNull()
+        return dtos.mapIndexed { index, dto ->
+            val displayName = dto.displayName.ifBlank {
+                // 현재 사용자의 경우 로컬 캐시의 닉네임 사용
+                if (localUser != null && dto.userId == localUser.id && localUser.display_name.isNotBlank()) {
+                    localUser.display_name
+                } else {
+                    "멤버 ${index + 1}"
+                }
+            }
             BookMember(
                 id = dto.id, bookId = dto.bookId, userId = dto.userId,
                 role = MemberRole.valueOf(dto.role), joinedAt = dto.joinedAt,
-                displayName = dto.displayName.ifBlank { dto.userId.take(8) + "..." },
+                displayName = displayName,
             )
         }
     }
@@ -290,6 +300,21 @@ class BookRepositoryImpl(
     // ── 동기화 ──────────────────────────────────────────────────────────────
 
     override suspend fun syncBookData(bookId: String) {
+        // 공유 가계부 이름/색상 변경 등 메타데이터도 동기화
+        runCatching {
+            val bookDto = supabase.postgrest.from("books")
+                .select { filter { eq("id", bookId) } }
+                .decodeSingle<BookDto>()
+            val existing = queries.selectAllBooks().executeAsList().firstOrNull { it.id == bookId }
+            if (existing != null) {
+                queries.upsertBook(
+                    id = bookId, name = bookDto.name, color_hex = bookDto.colorHex,
+                    icon_emoji = bookDto.iconEmoji, owner_id = bookDto.ownerId,
+                    is_selected = existing.is_selected,
+                    synced_at = Clock.System.now().toString(),
+                )
+            }
+        }
         pullBookData(bookId)
     }
 
@@ -321,39 +346,6 @@ class BookRepositoryImpl(
         // 선택된 책이 없으면 첫 번째 선택
         if (queries.selectSelectedBook().executeAsOneOrNull() == null) {
             books.firstOrNull()?.let { queries.setSelectedBook(it.id) }
-        }
-    }
-
-    override suspend fun backfillBookId(bookId: String) {
-        queries.backfillBookId(bookId)
-        queries.backfillFixedExpenseBookId(bookId)
-        queries.backfillCategoryBookId(bookId)
-        queries.backfillParentCategoryBookId(bookId)
-        queries.backfillAssetGroupBookId(bookId)
-        queries.backfillAssetBookId(bookId)
-    }
-
-    override suspend fun migrateOfflineData(): Book? {
-        // 인증되지 않으면 스킵
-        supabase.auth.currentUserOrNull() ?: return null
-
-        val bookCount = queries.countBooks().executeAsOne()
-        val offlineCount = queries.countOfflineTransactions().executeAsOne()
-
-        // 가계부가 있고 미이관 데이터도 없으면 스킵
-        if (bookCount > 0L && offlineCount == 0L) return null
-
-        return if (bookCount == 0L) {
-            // 첫 로그인: 기본 가계부 생성 + 오프라인 데이터 이관
-            val book = createBook("내 가계부", "#A0522D", "📒")
-            if (offlineCount > 0L) backfillBookId(book.id)
-            book
-        } else {
-            // 가계부가 있지만 미이관 데이터 존재 → 선택된 가계부로 이관
-            val selectedBook = queries.selectSelectedBook().executeAsOneOrNull()
-                ?: queries.selectAllBooks().executeAsList().firstOrNull()
-            if (selectedBook != null) backfillBookId(selectedBook.id)
-            null
         }
     }
 

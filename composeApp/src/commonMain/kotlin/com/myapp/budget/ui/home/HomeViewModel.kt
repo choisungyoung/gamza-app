@@ -2,6 +2,7 @@ package com.myapp.budget.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.myapp.budget.data.remote.RealtimeManager
 import com.myapp.budget.domain.SessionManager
 import com.myapp.budget.domain.model.Category
 import com.myapp.budget.domain.model.MonthlySummary
@@ -15,6 +16,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
@@ -45,6 +48,7 @@ class HomeViewModel(
     private val fixedExpenseRepository: FixedExpenseRepository,
     private val sessionManager: SessionManager,
     private val bookRepository: BookRepository,
+    private val realtimeManager: RealtimeManager,
 ) : ViewModel() {
 
     val activeBook = sessionManager.activeBook
@@ -54,13 +58,13 @@ class HomeViewModel(
     private val _syncState = MutableStateFlow(SyncState())
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
 
-    fun syncCurrentBook() {
+    fun refreshCurrentBook() {
         val bookId = sessionManager.activeBookId ?: return
         viewModelScope.launch {
             _syncState.value = SyncState(isSyncing = true)
             runCatching { bookRepository.syncBookData(bookId) }
                 .onSuccess { _syncState.value = SyncState(syncSuccess = true) }
-                .onFailure { _syncState.value = SyncState(error = it.message ?: "동기화 실패") }
+                .onFailure { _syncState.value = SyncState(error = it.message ?: "새로고침 실패") }
         }
     }
 
@@ -75,6 +79,19 @@ class HomeViewModel(
         viewModelScope.launch {
             fixedExpenseRepository.autoRegisterPending(today)
         }
+
+        // 활성 가계부가 바뀔 때마다 Realtime 채널 갱신
+        sessionManager.activeBook.onEach { book ->
+            if (book != null) realtimeManager.startWatching(book.id)
+            else realtimeManager.stopWatching()
+        }.launchIn(viewModelScope)
+
+        // 원격 변경 감지 시 자동 새로고침 (SQLDelight Flow가 자동으로 UI 갱신)
+        realtimeManager.transactionChanges.onEach { bookId ->
+            if (bookId == sessionManager.activeBookId) {
+                runCatching { bookRepository.syncBookData(bookId) }
+            }
+        }.launchIn(viewModelScope)
     }
 
     private val _selectedYear = MutableStateFlow(today.year)

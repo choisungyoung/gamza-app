@@ -48,9 +48,7 @@ class CategoryManagementViewModel(
                 }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
             }
 
-    init {
-        viewModelScope.launch { categoryRepository.ensureDefaults() }
-    }
+    init {}
 
     fun updateParent(id: Long, name: String, emoji: String) {
         viewModelScope.launch { categoryRepository.updateParent(id, name, emoji) }

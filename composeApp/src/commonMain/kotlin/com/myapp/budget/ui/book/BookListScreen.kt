@@ -199,6 +199,7 @@ fun BookListScreen(
                     BookItem(
                         book = book,
                         isSelected = book.id == selectedBook?.id,
+                        isShared = isShared,
                         ownerName = ownerName,
                         onClick = {
                             viewModel.selectBook(book)
@@ -216,6 +217,7 @@ fun BookListScreen(
 private fun BookItem(
     book: Book,
     isSelected: Boolean,
+    isShared: Boolean,
     ownerName: String?,
     onClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -244,15 +246,15 @@ private fun BookItem(
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = if (ownerName != null) "${ownerName}의 ${book.name}" else book.name,
+                text = book.name,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
             )
-            if (ownerName != null) {
+            if (isShared) {
                 Text(
-                    text = "공유 가계부",
+                    text = if (ownerName != null) "공유 가계부 · ${ownerName}님" else "공유 가계부",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
         }

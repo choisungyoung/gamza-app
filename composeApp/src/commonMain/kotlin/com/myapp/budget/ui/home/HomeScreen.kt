@@ -23,7 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CardDefaults
@@ -86,7 +86,7 @@ fun HomeScreen(
     LaunchedEffect(syncState.syncSuccess, syncState.error) {
         when {
             syncState.syncSuccess -> {
-                snackbarHostState.showSnackbar("동기화 완료")
+                snackbarHostState.showSnackbar("새로고침 완료")
                 viewModel.clearSyncState()
             }
             syncState.error != null -> {
@@ -134,9 +134,9 @@ fun HomeScreen(
                                 )
                             }
                         } else {
-                            IconButton(onClick = { viewModel.syncCurrentBook() }) {
+                            IconButton(onClick = { viewModel.refreshCurrentBook() }) {
                                 Icon(
-                                    Icons.Default.Sync, contentDescription = "동기화",
+                                    Icons.Default.Refresh, contentDescription = "새로고침",
                                     tint = MaterialTheme.colorScheme.onPrimary,
                                 )
                             }

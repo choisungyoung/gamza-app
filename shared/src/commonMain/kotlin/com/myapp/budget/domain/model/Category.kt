@@ -7,11 +7,11 @@ enum class Category(
 ) {
     // 지출
     FOOD("식비", "🍚", TransactionType.EXPENSE),
-    TRANSPORT("교통/차량", "🚌", TransactionType.EXPENSE),
-    HOUSING("주거/통신", "🏠", TransactionType.EXPENSE),
+    TRANSPORT("교통", "🚌", TransactionType.EXPENSE),
+    HOUSING("생활", "🏠", TransactionType.EXPENSE),
     SHOPPING("쇼핑", "🛍️", TransactionType.EXPENSE),
-    HEALTH("의료/건강", "💊", TransactionType.EXPENSE),
-    CULTURE("문화/여가", "🎬", TransactionType.EXPENSE),
+    HEALTH("의료", "💊", TransactionType.EXPENSE),
+    CULTURE("문화", "🎬", TransactionType.EXPENSE),
     EDUCATION("교육", "📚", TransactionType.EXPENSE),
     EXPENSE_OTHER("기타 지출", "💸", TransactionType.EXPENSE),
 

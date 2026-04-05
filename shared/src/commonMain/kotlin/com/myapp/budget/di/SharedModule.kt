@@ -1,5 +1,6 @@
 package com.myapp.budget.di
 
+import com.myapp.budget.data.remote.RealtimeManager
 import com.myapp.budget.data.remote.SupabaseClientProvider
 import com.myapp.budget.data.repository.AssetRepositoryImpl
 import com.myapp.budget.data.repository.AuthRepositoryImpl
@@ -23,6 +24,7 @@ import org.koin.dsl.module
 val sharedModule = module {
     single { SessionManager() }
     single { SupabaseClientProvider.client }
+    single { RealtimeManager(get()) }
 
     single<TransactionRepository> { TransactionRepositoryImpl(get(), get(), get()) }
     single<CategoryRepository> { CategoryRepositoryImpl(get(), get(), get()) }

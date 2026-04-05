@@ -215,6 +215,12 @@ UPDATE AssetGroupEntity SET sort_order = ? WHERE id = ?;
 countAssetGroups:
 SELECT COUNT(*) FROM AssetGroupEntity;
 
+countAssetGroupsByBookId:
+SELECT COUNT(*) FROM AssetGroupEntity WHERE book_id = ?;
+
+selectAssetGroupsByBookIdOrdered:
+SELECT * FROM AssetGroupEntity WHERE book_id = ? ORDER BY sort_order ASC, id ASC;
+
 CREATE TABLE AssetEntity (
     id              INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     name            TEXT    NOT NULL,
@@ -233,6 +239,12 @@ SELECT * FROM AssetEntity ORDER BY sort_order ASC, id ASC;
 selectAssetsByGroup:
 SELECT * FROM AssetEntity WHERE group_key = ? ORDER BY sort_order ASC, id ASC;
 
+selectAssetsByGroupAndBook:
+SELECT * FROM AssetEntity WHERE group_key = ? AND book_id = ? ORDER BY sort_order ASC, id ASC;
+
+selectAssetsByBookIdOrdered:
+SELECT * FROM AssetEntity WHERE book_id = ? ORDER BY sort_order ASC, id ASC;
+
 insertAsset:
 INSERT INTO AssetEntity (name, emoji, owner, initial_balance, group_key, sort_order)
 VALUES (?, ?, ?, ?, ?, ?);
@@ -248,6 +260,9 @@ UPDATE AssetEntity SET sort_order = ? WHERE id = ?;
 
 maxAssetSortOrder:
 SELECT COALESCE(MAX(sort_order), -1) FROM AssetEntity WHERE group_key = ?;
+
+maxAssetSortOrderByBook:
+SELECT COALESCE(MAX(sort_order), -1) FROM AssetEntity WHERE group_key = ? AND book_id = ?;
 
 countAssets:
 SELECT COUNT(*) FROM AssetEntity;

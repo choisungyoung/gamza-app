@@ -73,22 +73,20 @@ class AuthRepositoryImpl(
     }
 
     override suspend fun signOut() {
-        // 로그아웃 전에 현재 userId로 공유받은 가계부 데이터 삭제
-        val userId = supabase.auth.currentUserOrNull()?.id
-        if (userId != null) {
-            with(database.budgetQueries) {
-                deleteTransactionsForSharedBooks(userId)
-                deleteFixedExpensesForSharedBooks(userId)
-                deleteUserCategoriesForSharedBooks(userId)
-                deleteParentCategoriesForSharedBooks(userId)
-                deleteAssetGroupsForSharedBooks(userId)
-                deleteAssetsForSharedBooks(userId)
-                deleteBookMembersForSharedBooks(userId)
-                deleteSharedBooks(userId)
-            }
+        // 로그아웃 시 로컬 DB 전체 초기화 (서버가 유일한 저장소)
+        with(database.budgetQueries) {
+            deleteAllTransactions()
+            deleteAllFixedExpenses()
+            deleteAllUserCategories()
+            deleteAllParentCategories()
+            deleteAllAssetGroups()
+            deleteAllAssets()
+            deleteAllBookMembers()
+            deleteAllBooks()
+            deleteAllSyncQueue()
+            deleteLocalUser()
         }
         supabase.auth.signOut()
-        database.budgetQueries.deleteLocalUser()
     }
 
     private fun cacheUser(user: LocalUser) {

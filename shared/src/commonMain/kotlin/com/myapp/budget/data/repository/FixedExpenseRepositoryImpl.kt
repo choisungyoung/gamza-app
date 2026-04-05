@@ -3,6 +3,7 @@ package com.myapp.budget.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import com.myapp.budget.data.remote.FixedExpenseRemoteDto
+import com.myapp.budget.data.remote.TransactionRemoteDto
 import com.myapp.budget.db.BudgetDatabase
 import com.myapp.budget.domain.SessionManager
 import com.myapp.budget.domain.model.FixedExpense
@@ -13,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
@@ -33,7 +35,7 @@ class FixedExpenseRepositoryImpl(
             if (bookId.isNotBlank()) {
                 queries.selectFixedExpensesByBookId(bookId).asFlow().mapToList(Dispatchers.Default)
             } else {
-                queries.selectAllFixedExpenses().asFlow().mapToList(Dispatchers.Default)
+                flowOf(emptyList())
             }
         }.map { list -> list.map { it.toModel() } }
 
@@ -44,67 +46,50 @@ class FixedExpenseRepositoryImpl(
             if (bookId.isNotBlank()) {
                 queries.selectAllFixedExpensesIncludingInactiveByBookId(bookId).asFlow().mapToList(Dispatchers.Default)
             } else {
-                queries.selectAllFixedExpensesIncludingInactive().asFlow().mapToList(Dispatchers.Default)
+                flowOf(emptyList())
             }
         }.map { list -> list.map { it.toModel() } }
 
     override suspend fun insert(fixedExpense: FixedExpense): Long {
-        val bookId = sessionManager.activeBookId ?: ""
-        if (bookId.isNotBlank()) {
-            queries.insertFixedExpenseWithBook(
-                title = fixedExpense.title,
-                amount = fixedExpense.amount,
-                category = fixedExpense.category,
-                asset = fixedExpense.asset,
-                day_of_month = fixedExpense.dayOfMonth.toLong(),
-                start_year = fixedExpense.startYear.toLong(),
-                start_month = fixedExpense.startMonth.toLong(),
-                note = fixedExpense.note,
-                book_id = bookId,
+        val bookId = sessionManager.activeBookId
+            ?: error("활성화된 가계부가 없습니다. 로그인이 필요합니다.")
+
+        // 서버에 먼저 저장
+        val dto = supabase.postgrest.from("fixed_expenses").insert(
+            FixedExpenseRemoteDto(
+                bookId = bookId, title = fixedExpense.title,
+                amount = fixedExpense.amount, category = fixedExpense.category,
+                asset = fixedExpense.asset, dayOfMonth = fixedExpense.dayOfMonth,
+                startYear = fixedExpense.startYear, startMonth = fixedExpense.startMonth,
+                note = fixedExpense.note, isActive = true
             )
-            val localId = queries.lastFixedExpenseRowId().executeAsOne()
-            runCatching {
-                val dto = supabase.postgrest.from("fixed_expenses").insert(
-                    FixedExpenseRemoteDto(bookId = bookId, title = fixedExpense.title,
-                        amount = fixedExpense.amount, category = fixedExpense.category,
-                        asset = fixedExpense.asset, dayOfMonth = fixedExpense.dayOfMonth,
-                        startYear = fixedExpense.startYear, startMonth = fixedExpense.startMonth,
-                        note = fixedExpense.note, isActive = true)
-                ) { select() }.decodeSingle<FixedExpenseRemoteDto>()
-                queries.updateFixedExpenseRemoteId(dto.id, localId)
-            }
-            return localId
-        } else {
-            queries.insertFixedExpense(
-                title = fixedExpense.title,
-                amount = fixedExpense.amount,
-                category = fixedExpense.category,
-                asset = fixedExpense.asset,
-                day_of_month = fixedExpense.dayOfMonth.toLong(),
-                start_year = fixedExpense.startYear.toLong(),
-                start_month = fixedExpense.startMonth.toLong(),
-                note = fixedExpense.note
-            )
-            return queries.lastFixedExpenseRowId().executeAsOne()
-        }
+        ) { select() }.decodeSingle<FixedExpenseRemoteDto>()
+
+        // 로컬 캐시 업데이트
+        queries.insertFixedExpenseWithBook(
+            title = fixedExpense.title, amount = fixedExpense.amount,
+            category = fixedExpense.category, asset = fixedExpense.asset,
+            day_of_month = fixedExpense.dayOfMonth.toLong(),
+            start_year = fixedExpense.startYear.toLong(),
+            start_month = fixedExpense.startMonth.toLong(),
+            note = fixedExpense.note, book_id = bookId,
+        )
+        val localId = queries.lastFixedExpenseRowId().executeAsOne()
+        queries.updateFixedExpenseRemoteId(dto.id, localId)
+        return localId
     }
 
     override suspend fun update(id: Long, title: String, amount: Long, dayOfMonth: Int, note: String) {
         queries.updateFixedExpense(
-            title = title,
-            amount = amount,
-            day_of_month = dayOfMonth.toLong(),
-            note = note,
-            id = id
+            title = title, amount = amount,
+            day_of_month = dayOfMonth.toLong(), note = note, id = id
         )
         val remoteId = queries.selectFixedExpenseRemoteId(id).executeAsOneOrNull()
         if (!remoteId.isNullOrBlank()) {
             runCatching {
                 supabase.postgrest.from("fixed_expenses").update({
-                    set("title", title)
-                    set("amount", amount)
-                    set("day_of_month", dayOfMonth)
-                    set("note", note)
+                    set("title", title); set("amount", amount)
+                    set("day_of_month", dayOfMonth); set("note", note)
                 }) { filter { eq("id", remoteId) } }
             }
         }
@@ -140,12 +125,9 @@ class FixedExpenseRepositoryImpl(
     }
 
     override suspend fun autoRegisterPending(today: LocalDate) {
-        val bookId = sessionManager.activeBookId ?: ""
-        val allFixed = if (bookId.isNotBlank()) {
-            queries.selectFixedExpensesByBookId(bookId).executeAsList()
-        } else {
-            queries.selectAllFixedExpenses().executeAsList()
-        }
+        val bookId = sessionManager.activeBookId ?: return
+        val allFixed = queries.selectFixedExpensesByBookId(bookId).executeAsList()
+
         for (fe in allFixed) {
             val existingMonthKeys = queries.selectByFixedExpenseId(fe.id)
                 .executeAsList()
@@ -167,32 +149,28 @@ class FixedExpenseRepositoryImpl(
                 val monthKey = "$year-${month.toString().padStart(2, '0')}"
                 val day = clampDay(year, month, fe.day_of_month.toInt())
                 val dateStr = "$monthKey-${day.toString().padStart(2, '0')}"
-                if (bookId.isNotBlank()) {
+
+                // 서버에 먼저 저장
+                runCatching {
+                    val dto = supabase.postgrest.from("transactions").insert(
+                        TransactionRemoteDto(
+                            bookId = bookId, title = fe.title, amount = fe.amount,
+                            type = "EXPENSE", category = fe.category, date = dateStr,
+                            time = "00:00:00", note = fe.note, asset = fe.asset, createdBy = ""
+                        )
+                    ) { select() }.decodeSingle<TransactionRemoteDto>()
+
+                    // 로컬 캐시 업데이트
                     queries.insertWithBook(
                         title = fe.title, amount = fe.amount, type = "EXPENSE",
-                        category = fe.category, category_emoji = "", date = dateStr, time = "00:00:00",
-                        note = fe.note, asset = fe.asset, to_asset = "",
+                        category = fe.category, category_emoji = "", date = dateStr,
+                        time = "00:00:00", note = fe.note, asset = fe.asset, to_asset = "",
                         fixed_expense_id = fe.id, book_id = bookId,
                     )
                     val localId = queries.lastInsertRowId().executeAsOne()
-                    runCatching {
-                        val createdBy = ""
-                        val dto = supabase.postgrest.from("transactions").insert(
-                            com.myapp.budget.data.remote.TransactionRemoteDto(
-                                bookId = bookId, title = fe.title, amount = fe.amount,
-                                type = "EXPENSE", category = fe.category, date = dateStr,
-                                time = "00:00:00", note = fe.note, asset = fe.asset, createdBy = createdBy)
-                        ) { select() }.decodeSingle<com.myapp.budget.data.remote.TransactionRemoteDto>()
-                        queries.updateTransactionRemoteId(dto.id, localId)
-                    }
-                } else {
-                    queries.insert(
-                        title = fe.title, amount = fe.amount, type = "EXPENSE",
-                        category = fe.category, category_emoji = "", date = dateStr, time = "00:00:00",
-                        note = fe.note, asset = fe.asset, to_asset = "",
-                        fixed_expense_id = fe.id
-                    )
+                    queries.updateTransactionRemoteId(dto.id, localId)
                 }
+
                 if (month == 12) { year++; month = 1 } else month++
             }
         }

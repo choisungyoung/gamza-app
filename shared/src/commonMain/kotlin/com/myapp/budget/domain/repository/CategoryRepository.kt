@@ -18,5 +18,4 @@ interface CategoryRepository {
     suspend fun moveParentDown(id: Long, type: TransactionType)
     suspend fun moveSubcategoryUp(id: Long, parentId: Long)
     suspend fun moveSubcategoryDown(id: Long, parentId: Long)
-    suspend fun ensureDefaults()
 }

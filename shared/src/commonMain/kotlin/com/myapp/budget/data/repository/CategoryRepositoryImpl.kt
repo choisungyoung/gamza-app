@@ -8,7 +8,6 @@ import com.myapp.budget.db.BudgetDatabase
 import com.myapp.budget.db.ParentCategoryEntity
 import com.myapp.budget.db.UserCategoryEntity
 import com.myapp.budget.domain.SessionManager
-import com.myapp.budget.domain.model.Category
 import com.myapp.budget.domain.model.ParentCategory
 import com.myapp.budget.domain.model.TransactionType
 import com.myapp.budget.domain.model.UserCategory
@@ -45,42 +44,36 @@ class CategoryRepositoryImpl(
             .map { it.map { e -> e.toParentModel() } }
 
     override suspend fun insert(category: UserCategory) = withContext(Dispatchers.Default) {
-        val bookId = sessionManager.activeBookId ?: ""
+        val bookId = sessionManager.activeBookId
+            ?: error("활성화된 가계부가 없습니다. 로그인이 필요합니다.")
         val maxOrder = q.maxUserCategorySortOrder(category.parentId).executeAsOne()
-        if (bookId.isNotBlank()) {
-            q.insertUserCategoryWithBook(category.name, category.emoji, category.parentId, category.type.name, maxOrder + 1, bookId)
-            val localId = q.lastInsertRowId().executeAsOne()
-            val parentRemoteId = q.selectParentCategoryRemoteId(category.parentId).executeAsOneOrNull()
-            if (!parentRemoteId.isNullOrBlank()) {
-                runCatching {
-                    val dto = supabase.postgrest.from("user_categories").insert(
-                        UserCategoryRemoteDto(bookId = bookId, name = category.name, emoji = category.emoji,
-                            parentRemoteId = parentRemoteId, type = category.type.name, sortOrder = (maxOrder + 1).toInt())
-                    ) { select() }.decodeSingle<UserCategoryRemoteDto>()
-                    q.updateUserCategoryRemoteId(dto.id, localId)
-                }
+        q.insertUserCategoryWithBook(category.name, category.emoji, category.parentId, category.type.name, maxOrder + 1, bookId)
+        val localId = q.lastInsertRowId().executeAsOne()
+        val parentRemoteId = q.selectParentCategoryRemoteId(category.parentId).executeAsOneOrNull()
+        if (!parentRemoteId.isNullOrBlank()) {
+            runCatching {
+                val dto = supabase.postgrest.from("user_categories").insert(
+                    UserCategoryRemoteDto(bookId = bookId, name = category.name, emoji = category.emoji,
+                        parentRemoteId = parentRemoteId, type = category.type.name, sortOrder = (maxOrder + 1).toInt())
+                ) { select() }.decodeSingle<UserCategoryRemoteDto>()
+                q.updateUserCategoryRemoteId(dto.id, localId)
             }
-        } else {
-            q.insertUserCategory(category.name, category.emoji, category.parentId, category.type.name, maxOrder + 1)
         }
         Unit
     }
 
     override suspend fun insertParent(name: String, emoji: String, type: TransactionType) = withContext(Dispatchers.Default) {
-        val bookId = sessionManager.activeBookId ?: ""
+        val bookId = sessionManager.activeBookId
+            ?: error("활성화된 가계부가 없습니다. 로그인이 필요합니다.")
         val maxOrder = q.maxParentSortOrderByType(type.name).executeAsOne()
-        if (bookId.isNotBlank()) {
-            q.insertParentWithBook(name.trim(), emoji.ifBlank { "📌" }, type.name, maxOrder + 1, bookId)
-            val localId = q.lastInsertRowId().executeAsOne()
-            runCatching {
-                val dto = supabase.postgrest.from("parent_categories").insert(
-                    ParentCategoryRemoteDto(bookId = bookId, name = name.trim(),
-                        emoji = emoji.ifBlank { "📌" }, type = type.name, sortOrder = (maxOrder + 1).toInt())
-                ) { select() }.decodeSingle<ParentCategoryRemoteDto>()
-                q.updateParentCategoryRemoteId(dto.id, localId)
-            }
-        } else {
-            q.insertParent(name.trim(), emoji.ifBlank { "📌" }, type.name, maxOrder + 1)
+        q.insertParentWithBook(name.trim(), emoji.ifBlank { "📌" }, type.name, maxOrder + 1, bookId)
+        val localId = q.lastInsertRowId().executeAsOne()
+        runCatching {
+            val dto = supabase.postgrest.from("parent_categories").insert(
+                ParentCategoryRemoteDto(bookId = bookId, name = name.trim(),
+                    emoji = emoji.ifBlank { "📌" }, type = type.name, sortOrder = (maxOrder + 1).toInt())
+            ) { select() }.decodeSingle<ParentCategoryRemoteDto>()
+            q.updateParentCategoryRemoteId(dto.id, localId)
         }
         Unit
     }
@@ -162,59 +155,6 @@ class CategoryRepositoryImpl(
         q.updateUserCategoryOrder(current.sortOrder.toLong(), below.id)
     }
 
-    override suspend fun ensureDefaults() = withContext(Dispatchers.Default) {
-        val subCount = q.countUserCategories().executeAsOne()
-        val parentCount = q.countParents().executeAsOne()
-
-        if (parentCount == 0L) {
-            Category.entries.forEachIndexed { index, cat ->
-                q.insertParent(cat.displayName, cat.emoji, cat.type.name, index.toLong())
-            }
-        } else {
-            val transferCount = q.countParentsByType(TransactionType.TRANSFER.name).executeAsOne()
-            if (transferCount == 0L) {
-                val transferCategories = Category.entries.filter { it.type == TransactionType.TRANSFER }
-                transferCategories.forEachIndexed { index, cat ->
-                    q.insertParent(cat.displayName, cat.emoji, cat.type.name, index.toLong())
-                }
-            }
-        }
-
-        if (subCount == 0L) {
-            subcategoryDefaults.forEach { (cat, subs) ->
-                val parents = getParentsByType(cat.type).first()
-                val parent = parents.firstOrNull { it.name == cat.displayName } ?: return@forEach
-                subs.forEachIndexed { index, (name, emoji) ->
-                    q.insertUserCategory(name, emoji, parent.id, cat.type.name, index.toLong())
-                }
-            }
-        }
-    }
-
-    private val subcategoryDefaults = mapOf(
-        Category.FOOD to listOf(
-            "아침식사" to "🍳", "점심식사" to "🍱", "저녁식사" to "🍽️",
-            "간식" to "🍪", "카페" to "☕", "배달음식" to "🛵"
-        ),
-        Category.TRANSPORT to listOf(
-            "대중교통" to "🚇", "택시" to "🚕", "주유" to "⛽", "주차" to "🅿️"
-        ),
-        Category.HOUSING to listOf(
-            "월세" to "🏠", "관리비" to "🔧", "통신/인터넷" to "📶", "공과금" to "💡"
-        ),
-        Category.SHOPPING to listOf(
-            "의류" to "👕", "생활용품" to "🛒", "전자기기" to "💻", "온라인쇼핑" to "📦"
-        ),
-        Category.HEALTH to listOf("병원" to "🏥", "약국" to "💊", "운동" to "🏃"),
-        Category.CULTURE to listOf("영화/OTT" to "🎬", "게임" to "🎮", "여행" to "✈️", "독서" to "📖"),
-        Category.EDUCATION to listOf("책" to "📚", "강의" to "🖥️", "학원" to "🏫"),
-        Category.EXPENSE_OTHER to listOf("기타지출" to "💸"),
-        Category.SALARY to listOf("본급여" to "💰", "상여금" to "🎁"),
-        Category.SIDE_JOB to listOf("프리랜서" to "💼", "알바" to "👷"),
-        Category.INVESTMENT to listOf("주식" to "📈", "이자" to "💹", "부동산" to "🏢"),
-        Category.ALLOWANCE to listOf("용돈" to "🎁"),
-        Category.INCOME_OTHER to listOf("기타수입" to "💰")
-    )
 }
 
 private fun UserCategoryEntity.toModel() = UserCategory(

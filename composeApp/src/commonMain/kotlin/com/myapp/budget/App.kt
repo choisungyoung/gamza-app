@@ -27,7 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.AccountCircle
+
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.ChevronRight
@@ -54,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -148,13 +149,28 @@ fun App() {
         LaunchedEffect(authUser) {
             sessionManager.setUser(authUser)
             if (authUser != null && prevAuthUser == null) {
-                // 첫 로그인 시: 서버 동기화 → 오프라인 데이터 이관
-                runCatching { bookRepository.syncBooks() }
-                    .onFailure { println("[App] syncBooks failed: ${it.message}") }
-                runCatching {
-                    val migrated = bookRepository.migrateOfflineData()
-                    if (migrated != null) sessionManager.setActiveBook(migrated)
-                }.onFailure { println("[App] migrateOfflineData failed: ${it.message}") }
+                // 로그인 시: 서버에서 전체 가계부 목록 동기화
+                val syncResult = runCatching { bookRepository.syncBooks() }
+                if (syncResult.isSuccess) {
+                    val hasBooks = bookRepository.getAllBooks().first().isNotEmpty()
+                    if (!hasBooks) {
+                        // 가계부가 없으면 기본 가계부 자동 생성 (신규 가입자)
+                        runCatching { bookRepository.createBook("내 가계부", "#A0522D", "📒") }
+                            .onFailure { println("[App] createBook failed: ${it.message}") }
+                    } else {
+                        // 선택된 가계부 데이터 즉시 동기화
+                        runCatching {
+                            val book = bookRepository.getSelectedBook().first()
+                            book?.let { bookRepository.syncBookData(it.id) }
+                        }.onFailure { println("[App] syncBookData failed: ${it.message}") }
+                    }
+                } else {
+                    println("[App] syncBooks failed: ${syncResult.exceptionOrNull()?.message}")
+                    runCatching {
+                        val book = bookRepository.getSelectedBook().first()
+                        book?.let { bookRepository.syncBookData(it.id) }
+                    }.onFailure { println("[App] syncBookData failed: ${it.message}") }
+                }
             } else if (authUser == null) {
                 sessionManager.clear()
             }
@@ -175,25 +191,35 @@ fun App() {
             return@BudgetTheme
         }
 
+        // 인증 필수: 로그인하지 않으면 앱 사용 불가
+        if (authUser == null) {
+            var loginScreen by remember { mutableStateOf<Screen>(Screen.Login) }
+            when (loginScreen) {
+                is Screen.Login -> LoginScreen(
+                    onNavigateToSignup = { loginScreen = Screen.Signup },
+                    onLoginSuccess = { /* authUser 변경 시 자동으로 메인 화면으로 전환 */ },
+                )
+                is Screen.Signup -> SignupScreen(
+                    onBack = { loginScreen = Screen.Login },
+                )
+                else -> LoginScreen(
+                    onNavigateToSignup = { loginScreen = Screen.Signup },
+                    onLoginSuccess = { },
+                )
+            }
+            return@BudgetTheme
+        }
+
         val scope = rememberCoroutineScope()
         var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
-        var postLoginDestination by remember { mutableStateOf<Screen?>(null) }
         var drawerOpen by remember { mutableStateOf(false) }
         var isAdminMode by remember { mutableStateOf(false) }
         var potatoClickCount by remember { mutableIntStateOf(0) }
         var toastMessage by remember { mutableStateOf("") }
         var showLogoutDialog by remember { mutableStateOf(false) }
 
-        val navigateWithAuthGuard: (Screen) -> Unit = remember(authUser) { { screen ->
-            val isBookScreen = screen is Screen.BookList || screen is Screen.CreateBook
-                || screen is Screen.BookSettings || screen is Screen.Invite
-                || screen is Screen.MemberManagement
-            if (isBookScreen && authUser == null) {
-                postLoginDestination = screen
-                currentScreen = Screen.Login
-            } else {
-                currentScreen = screen
-            }
+        val navigateWithAuthGuard: (Screen) -> Unit = remember { { screen ->
+            currentScreen = screen
         }}
         val onMenuClick: () -> Unit = remember { { drawerOpen = true } }
 
@@ -203,20 +229,13 @@ fun App() {
                 || currentScreen is Screen.Assets
         BackPressExitHandler(enabled = isMainTab && !drawerOpen)
         OnBackPressed(enabled = drawerOpen) { drawerOpen = false }
-        OnBackPressed(enabled = currentScreen is Screen.Login || currentScreen is Screen.Signup) {
-            currentScreen = Screen.Home
-        }
 
         Box(modifier = Modifier.fillMaxSize()) {
             AppContent(
                 currentScreen = currentScreen,
                 onNavigate = navigateWithAuthGuard,
                 onMenuClick = onMenuClick,
-                onLoginSuccess = {
-                    val dest = postLoginDestination ?: Screen.Home
-                    postLoginDestination = null
-                    currentScreen = dest
-                }
+                onLoginSuccess = { currentScreen = Screen.Home }
             )
 
             // 스크림
@@ -274,10 +293,6 @@ fun App() {
                     },
                     currentUserEmail = authUser?.email,
                     activeBook = sessionManager.activeBook.collectAsState().value,
-                    onLoginClick = {
-                        drawerOpen = false
-                        currentScreen = Screen.Login
-                    },
                     onLogoutClick = { showLogoutDialog = true },
                 )
             }
@@ -287,7 +302,7 @@ fun App() {
                 androidx.compose.material3.AlertDialog(
                     onDismissRequest = { showLogoutDialog = false },
                     title = { Text("로그아웃") },
-                    text = { Text("로그아웃하면 오프라인 모드로 전환됩니다.\n로그아웃 하시겠습니까?") },
+                    text = { Text("로그아웃하면 로컬 데이터가 모두 삭제됩니다.\n로그아웃 하시겠습니까?") },
                     confirmButton = {
                         androidx.compose.material3.TextButton(
                             onClick = {
@@ -346,6 +361,34 @@ private fun AppContent(
     onMenuClick: () -> Unit,
     onLoginSuccess: () -> Unit,
 ) {
+    val sessionManager: SessionManager = org.koin.compose.koinInject()
+    val activeBook by sessionManager.activeBook.collectAsState()
+    var showNoBookDialog by remember { mutableStateOf(false) }
+
+    if (showNoBookDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showNoBookDialog = false },
+            title = { Text("가계부가 없어요") },
+            text = { Text("거래를 추가하려면 가계부가 필요합니다.\n새 가계부를 만들어보세요.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    showNoBookDialog = false
+                    onNavigate(Screen.CreateBook())
+                }) { Text("가계부 만들기") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showNoBookDialog = false }) {
+                    Text("취소")
+                }
+            },
+        )
+    }
+
+    val onAddClick: (Screen) -> Unit = { previousScreen ->
+        if (activeBook != null) onNavigate(Screen.AddEdit(previousScreen = previousScreen))
+        else showNoBookDialog = true
+    }
+
     val showBottomBar = currentScreen !is Screen.AddEdit
             && currentScreen !is Screen.CategoryManagement
             && currentScreen !is Screen.FixedExpenses
@@ -450,12 +493,12 @@ private fun AppContent(
         ) { screen ->
             when (screen) {
                 is Screen.Home -> HomeScreen(
-                    onAddClick = { onNavigate(Screen.AddEdit()) },
+                    onAddClick = { onAddClick(Screen.Home) },
                     onTransactionClick = { id -> onNavigate(Screen.AddEdit(id)) },
                     onMenuClick = onMenuClick
                 )
                 is Screen.Transactions -> TransactionListScreen(
-                    onAddClick = { onNavigate(Screen.AddEdit(previousScreen = Screen.Transactions)) },
+                    onAddClick = { onAddClick(Screen.Transactions) },
                     onTransactionClick = { id -> onNavigate(Screen.AddEdit(id, Screen.Transactions)) },
                     onSearchClick = { onNavigate(Screen.Search) },
                     onMenuClick = onMenuClick
@@ -541,7 +584,6 @@ private fun AppDrawer(
     onBookListClick: () -> Unit,
     currentUserEmail: String?,
     activeBook: com.myapp.budget.domain.model.Book?,
-    onLoginClick: () -> Unit,
     onLogoutClick: () -> Unit,
 ) {
     val gradient = Brush.horizontalGradient(
@@ -599,11 +641,7 @@ private fun AppDrawer(
                     color = Color.White
                 )
                 Text(
-                    text = when {
-                        isAdminMode -> "🔒 관리자 모드 활성화됨"
-                        currentUserEmail != null -> currentUserEmail
-                        else -> "오프라인 모드"
-                    },
+                    text = if (isAdminMode) "🔒 관리자 모드 활성화됨" else (currentUserEmail ?: ""),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isAdminMode) Color(0xFFFFD700) else Color.White.copy(alpha = 0.75f)
                 )
@@ -685,21 +723,12 @@ private fun AppDrawer(
             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
         )
 
-        if (currentUserEmail != null) {
-            DrawerMenuItem(
-                icon = Icons.Default.ExitToApp,
-                label = "로그아웃",
-                onClick = onLogoutClick,
-                tint = MaterialTheme.colorScheme.error,
-            )
-        } else {
-            DrawerMenuItem(
-                icon = Icons.Default.AccountCircle,
-                label = "로그인",
-                onClick = onLoginClick,
-                tint = PotatoBrown,
-            )
-        }
+        DrawerMenuItem(
+            icon = Icons.Default.ExitToApp,
+            label = "로그아웃",
+            onClick = onLogoutClick,
+            tint = MaterialTheme.colorScheme.error,
+        )
     }
 }
 

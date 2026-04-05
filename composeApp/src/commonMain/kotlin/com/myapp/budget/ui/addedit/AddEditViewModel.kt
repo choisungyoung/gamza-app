@@ -10,7 +10,6 @@ import com.myapp.budget.domain.model.ParentCategory
 import com.myapp.budget.domain.model.Transaction
 import com.myapp.budget.domain.model.TransactionType
 import com.myapp.budget.domain.model.UserCategory
-import com.myapp.budget.domain.repository.AssetRepository
 import com.myapp.budget.domain.repository.CategoryRepository
 import com.myapp.budget.domain.repository.FixedExpenseRepository
 import com.myapp.budget.domain.repository.TransactionRepository
@@ -37,7 +36,6 @@ import kotlinx.datetime.todayIn
 class AddEditViewModel(
     private val repository: TransactionRepository,
     private val categoryRepository: CategoryRepository,
-    private val assetRepository: AssetRepository,
     private val fixedExpenseRepository: FixedExpenseRepository
 ) : ViewModel() {
 
@@ -113,9 +111,6 @@ class AddEditViewModel(
         _parentIdFlow.value = 0L
 
         viewModelScope.launch {
-            categoryRepository.ensureDefaults()
-            assetRepository.ensureDefaults()
-
             if (transactionId != null) {
                 isLoading = true
                 val transaction = repository.getById(transactionId)
@@ -248,78 +243,84 @@ class AddEditViewModel(
         }
 
         viewModelScope.launch {
-            val categoryStr = if (transactionType == TransactionType.TRANSFER) {
-                selectedParent!!.name
-            } else {
-                "${selectedParent!!.name}/${selectedSubcategory!!.name}"
-            }
-
-            val fixedExpenseId: Long? = when {
-                // 신규 거래 + 고정지출 등록
-                saveAsFixed && transactionType == TransactionType.EXPENSE && editingId == null -> {
-                    fixedExpenseRepository.insert(
-                        FixedExpense(
-                            title = title.trim(),
-                            amount = amount,
-                            category = categoryStr,
-                            asset = selectedAsset,
-                            dayOfMonth = date.dayOfMonth,
-                            startYear = date.year,
-                            startMonth = date.monthNumber,
-                            note = note.trim()
-                        )
-                    )
+            isLoading = true
+            runCatching {
+                val categoryStr = if (transactionType == TransactionType.TRANSFER) {
+                    selectedParent!!.name
+                } else {
+                    "${selectedParent!!.name}/${selectedSubcategory!!.name}"
                 }
-                // 수정 모드 + N→Y (새로 고정지출 등록)
-                saveAsFixed && editingId != null && loadedFixedExpenseId == null -> {
-                    fixedExpenseRepository.insert(
-                        FixedExpense(
-                            title = title.trim(),
-                            amount = amount,
-                            category = categoryStr,
-                            asset = selectedAsset,
-                            dayOfMonth = date.dayOfMonth,
-                            startYear = date.year,
-                            startMonth = date.monthNumber,
-                            note = note.trim()
+
+                val fixedExpenseId: Long? = when {
+                    // 신규 거래 + 고정지출 등록
+                    saveAsFixed && transactionType == TransactionType.EXPENSE && editingId == null -> {
+                        fixedExpenseRepository.insert(
+                            FixedExpense(
+                                title = title.trim(),
+                                amount = amount,
+                                category = categoryStr,
+                                asset = selectedAsset,
+                                dayOfMonth = date.dayOfMonth,
+                                startYear = date.year,
+                                startMonth = date.monthNumber,
+                                note = note.trim()
+                            )
                         )
-                    )
+                    }
+                    // 수정 모드 + N→Y (새로 고정지출 등록)
+                    saveAsFixed && editingId != null && loadedFixedExpenseId == null -> {
+                        fixedExpenseRepository.insert(
+                            FixedExpense(
+                                title = title.trim(),
+                                amount = amount,
+                                category = categoryStr,
+                                asset = selectedAsset,
+                                dayOfMonth = date.dayOfMonth,
+                                startYear = date.year,
+                                startMonth = date.monthNumber,
+                                note = note.trim()
+                            )
+                        )
+                    }
+                    // 수정 모드 + 기존 고정지출 유지
+                    editingId != null && loadedFixedExpenseId != null -> loadedFixedExpenseId
+                    else -> null
                 }
-                // 수정 모드 + 기존 고정지출 유지
-                editingId != null && loadedFixedExpenseId != null -> loadedFixedExpenseId
-                else -> null
-            }
 
-            val transaction = Transaction(
-                id = editingId ?: 0,
-                title = title.trim(),
-                amount = amount,
-                type = transactionType,
-                category = categoryStr,
-                categoryEmoji = selectedParent!!.emoji,
-                date = date,
-                time = time,
-                note = note.trim(),
-                asset = selectedAsset,
-                toAsset = toAsset,
-                fixedExpenseId = fixedExpenseId
-            )
-            if (editingId != null) repository.update(transaction)
-            else repository.insert(transaction)
+                val transaction = Transaction(
+                    id = editingId ?: 0,
+                    title = title.trim(),
+                    amount = amount,
+                    type = transactionType,
+                    category = categoryStr,
+                    categoryEmoji = selectedParent!!.emoji,
+                    date = date,
+                    time = time,
+                    note = note.trim(),
+                    asset = selectedAsset,
+                    toAsset = toAsset,
+                    fixedExpenseId = fixedExpenseId
+                )
+                if (editingId != null) repository.update(transaction)
+                else repository.insert(transaction)
 
-            if (fixedExpenseId != null) {
-                val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
-                val pending = countPendingMonths(date.year, date.monthNumber, today)
-                if (pending > 0) {
-                    pendingAutoRegisterCount = pending
-                    onSuccessCallback = onSuccess
-                    showAutoRegisterDialog = true
+                if (fixedExpenseId != null) {
+                    val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
+                    val pending = countPendingMonths(date.year, date.monthNumber, today)
+                    if (pending > 0) {
+                        pendingAutoRegisterCount = pending
+                        onSuccessCallback = onSuccess
+                        showAutoRegisterDialog = true
+                    } else {
+                        onSuccess()
+                    }
                 } else {
                     onSuccess()
                 }
-            } else {
-                onSuccess()
+            }.onFailure { e ->
+                errorMessage = e.message ?: "저장에 실패했습니다. 네트워크 연결을 확인해주세요."
             }
+            isLoading = false
         }
     }
 
@@ -353,6 +354,12 @@ class AddEditViewModel(
 
     fun delete(onSuccess: () -> Unit) {
         val id = editingId ?: return
-        viewModelScope.launch { repository.delete(id); onSuccess() }
+        viewModelScope.launch {
+            isLoading = true
+            runCatching { repository.delete(id) }
+                .onSuccess { onSuccess() }
+                .onFailure { e -> errorMessage = e.message ?: "삭제에 실패했습니다. 네트워크 연결을 확인해주세요." }
+            isLoading = false
+        }
     }
 }

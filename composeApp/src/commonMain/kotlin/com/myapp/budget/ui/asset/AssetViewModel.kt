@@ -56,9 +56,7 @@ class AssetViewModel(
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
 
-    init {
-        viewModelScope.launch { repo.ensureDefaults() }
-    }
+    init {}
 
     fun updateGroup(id: Long, name: String, emoji: String) {
         viewModelScope.launch { repo.updateGroup(id, name, emoji) }
