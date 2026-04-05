@@ -1,0 +1,7 @@
+-- Migration 10: Add remote_id for Supabase sync
+ALTER TABLE TransactionEntity ADD COLUMN remote_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE FixedExpenseEntity ADD COLUMN remote_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE ParentCategoryEntity ADD COLUMN remote_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE UserCategoryEntity ADD COLUMN remote_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE AssetGroupEntity ADD COLUMN remote_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE AssetEntity ADD COLUMN remote_id TEXT NOT NULL DEFAULT '';

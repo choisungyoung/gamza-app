@@ -2,15 +2,18 @@ package com.myapp.budget.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.myapp.budget.domain.SessionManager
 import com.myapp.budget.domain.model.Category
 import com.myapp.budget.domain.model.MonthlySummary
 import com.myapp.budget.domain.model.Transaction
 import com.myapp.budget.domain.model.TransactionType
+import com.myapp.budget.domain.repository.BookRepository
 import com.myapp.budget.domain.repository.FixedExpenseRepository
 import com.myapp.budget.domain.repository.TransactionRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -21,6 +24,12 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.todayIn
+
+data class SyncState(
+    val isSyncing: Boolean = false,
+    val syncSuccess: Boolean = false,
+    val error: String? = null,
+)
 
 data class HomeUiState(
     val summary: MonthlySummary = MonthlySummary(),
@@ -33,8 +42,32 @@ data class HomeUiState(
 
 class HomeViewModel(
     private val repository: TransactionRepository,
-    private val fixedExpenseRepository: FixedExpenseRepository
+    private val fixedExpenseRepository: FixedExpenseRepository,
+    private val sessionManager: SessionManager,
+    private val bookRepository: BookRepository,
 ) : ViewModel() {
+
+    val activeBook = sessionManager.activeBook
+    val bookSwitchedEvent = sessionManager.bookSwitched
+    val currentUser = sessionManager.currentUser
+
+    private val _syncState = MutableStateFlow(SyncState())
+    val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
+
+    fun syncCurrentBook() {
+        val bookId = sessionManager.activeBookId ?: return
+        viewModelScope.launch {
+            _syncState.value = SyncState(isSyncing = true)
+            runCatching { bookRepository.syncBookData(bookId) }
+                .onSuccess { _syncState.value = SyncState(syncSuccess = true) }
+                .onFailure { _syncState.value = SyncState(error = it.message ?: "동기화 실패") }
+        }
+    }
+
+    fun clearSyncState() {
+        _syncState.value = SyncState()
+    }
+
 
     private val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
 

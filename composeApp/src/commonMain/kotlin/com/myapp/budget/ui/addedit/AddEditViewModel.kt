@@ -296,6 +296,7 @@ class AddEditViewModel(
                 amount = amount,
                 type = transactionType,
                 category = categoryStr,
+                categoryEmoji = selectedParent!!.emoji,
                 date = date,
                 time = time,
                 note = note.trim(),

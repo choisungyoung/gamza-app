@@ -2,19 +2,28 @@ package com.myapp.budget.data.repository
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
+import com.myapp.budget.data.remote.AssetGroupRemoteDto
+import com.myapp.budget.data.remote.AssetRemoteDto
 import com.myapp.budget.db.AssetEntity
 import com.myapp.budget.db.AssetGroupEntity
 import com.myapp.budget.db.BudgetDatabase
+import com.myapp.budget.domain.SessionManager
 import com.myapp.budget.domain.model.Asset
 import com.myapp.budget.domain.model.AssetGroup
 import com.myapp.budget.domain.repository.AssetRepository
+import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
-class AssetRepositoryImpl(private val db: BudgetDatabase) : AssetRepository {
+class AssetRepositoryImpl(
+    private val db: BudgetDatabase,
+    private val sessionManager: SessionManager,
+    private val supabase: SupabaseClient,
+) : AssetRepository {
 
     private val q = db.budgetQueries
 
@@ -34,24 +43,66 @@ class AssetRepositoryImpl(private val db: BudgetDatabase) : AssetRepository {
             .map { it.map { e -> e.toModel() } }
 
     override suspend fun insertAsset(asset: Asset) = withContext(Dispatchers.Default) {
+        val bookId = sessionManager.activeBookId ?: ""
         val maxOrder = q.maxAssetSortOrder(asset.groupKey).executeAsOne()
-        q.insertAsset(asset.name, asset.emoji, asset.owner, asset.initialBalance,
-            asset.groupKey, maxOrder + 1)
+        if (bookId.isNotBlank()) {
+            q.insertAssetWithBook(asset.name, asset.emoji, asset.owner, asset.initialBalance,
+                asset.groupKey, maxOrder + 1, bookId)
+            val localId = q.lastInsertRowId().executeAsOne()
+            runCatching {
+                val dto = supabase.postgrest.from("assets").insert(
+                    AssetRemoteDto(bookId = bookId, name = asset.name, emoji = asset.emoji,
+                        owner = asset.owner, initialBalance = asset.initialBalance,
+                        groupKey = asset.groupKey, sortOrder = (maxOrder + 1).toInt())
+                ) { select() }.decodeSingle<AssetRemoteDto>()
+                q.updateAssetRemoteId(dto.id, localId)
+            }
+        } else {
+            q.insertAsset(asset.name, asset.emoji, asset.owner, asset.initialBalance,
+                asset.groupKey, maxOrder + 1)
+        }
+        Unit
     }
 
     override suspend fun updateAsset(id: Long, name: String, emoji: String,
                                      owner: String, initialBalance: Long) =
         withContext(Dispatchers.Default) {
             q.updateAsset(name, emoji, owner, initialBalance, id)
+            val remoteId = q.selectAssetRemoteId(id).executeAsOneOrNull()
+            if (!remoteId.isNullOrBlank()) {
+                runCatching {
+                    supabase.postgrest.from("assets").update({
+                        set("name", name); set("emoji", emoji)
+                        set("owner", owner); set("initial_balance", initialBalance)
+                    }) { filter { eq("id", remoteId) } }
+                }
+            }
+            Unit
         }
 
     override suspend fun deleteAsset(id: Long) = withContext(Dispatchers.Default) {
+        val remoteId = q.selectAssetRemoteId(id).executeAsOneOrNull()
         q.deleteAsset(id)
+        if (!remoteId.isNullOrBlank()) {
+            runCatching {
+                supabase.postgrest.from("assets").delete { filter { eq("id", remoteId) } }
+            }
+        }
+        Unit
     }
 
     override suspend fun updateGroup(id: Long, name: String, emoji: String) =
         withContext(Dispatchers.Default) {
             q.updateAssetGroup(name, emoji, id)
+            val remoteId = q.selectAssetGroupRemoteId(id).executeAsOneOrNull()
+            if (!remoteId.isNullOrBlank()) {
+                runCatching {
+                    supabase.postgrest.from("asset_groups").update({
+                        set("name", name); set("emoji", emoji)
+                    }) { filter { eq("id", remoteId) } }
+                }
+            }
+            Unit
         }
 
     override suspend fun moveGroupUp(id: Long) = withContext(Dispatchers.Default) {
@@ -118,7 +169,6 @@ class AssetRepositoryImpl(private val db: BudgetDatabase) : AssetRepository {
         GroupDef("LOAN",       "대출",      "📊", isLiability = true),
         GroupDef("INVESTMENT", "투자",      "📈")
     )
-
     private val defaultAssets = listOf(
         AssetDef("ACCOUNT",    "우리은행 월급 계좌", "🏦"),
         AssetDef("PAY_MONEY",  "네이버 페이",        "📱"),

@@ -84,7 +84,7 @@ fun TransactionItem(
                     .background(bgColor),
                 contentAlignment = Alignment.Center
             ) {
-                EmojiText(text = category.emoji, fontSize = 22.sp)
+                EmojiText(text = transaction.categoryEmoji.ifBlank { category.emoji }, fontSize = 22.sp)
             }
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(

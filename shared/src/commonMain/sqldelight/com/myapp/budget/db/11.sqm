@@ -1,0 +1,2 @@
+-- Migration 11: Add category_emoji to TransactionEntity
+ALTER TABLE TransactionEntity ADD COLUMN category_emoji TEXT NOT NULL DEFAULT '';

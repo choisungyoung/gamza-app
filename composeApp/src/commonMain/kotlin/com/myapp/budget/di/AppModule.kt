@@ -2,6 +2,8 @@ package com.myapp.budget.di
 
 import com.myapp.budget.ui.addedit.AddEditViewModel
 import com.myapp.budget.ui.asset.AssetViewModel
+import com.myapp.budget.ui.auth.AuthViewModel
+import com.myapp.budget.ui.book.BookViewModel
 import com.myapp.budget.ui.category.CategoryManagementViewModel
 import com.myapp.budget.ui.datamanagement.DataManagementViewModel
 import com.myapp.budget.ui.dbviewer.DbViewerViewModel
@@ -24,4 +26,6 @@ val appModule = module {
     viewModelOf(::FixedExpenseViewModel)
     viewModelOf(::DataManagementViewModel)
     viewModelOf(::DbViewerViewModel)
+    viewModelOf(::AuthViewModel)
+    viewModelOf(::BookViewModel)
 }

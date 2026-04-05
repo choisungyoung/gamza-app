@@ -1,6 +1,6 @@
 package com.myapp.budget.ui.category
 
-import androidx.activity.compose.BackHandler
+import com.myapp.budget.platform.OnBackPressed
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -113,7 +113,7 @@ fun CategoryManagementScreen(
     onBack: () -> Unit = {},
     viewModel: CategoryManagementViewModel = koinViewModel()
 ) {
-    BackHandler { onBack() }
+    OnBackPressed(enabled = true) { onBack() }
 
     val selectedType by viewModel.selectedType.collectAsState()
     val expenseParents by viewModel.expenseParents.collectAsState()

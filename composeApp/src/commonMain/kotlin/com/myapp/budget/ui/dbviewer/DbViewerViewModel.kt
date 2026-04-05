@@ -18,6 +18,9 @@ class DbViewerViewModel(
     private val _isLoading = MutableStateFlow(true)
     val isLoading: StateFlow<Boolean> = _isLoading
 
+    private val _deleteResult = MutableStateFlow<String?>(null)
+    val deleteResult: StateFlow<String?> = _deleteResult
+
     init {
         loadData()
     }
@@ -28,5 +31,20 @@ class DbViewerViewModel(
             _tables.value = repository.getAllTableData()
             _isLoading.value = false
         }
+    }
+
+    fun deleteTable(tableName: String) {
+        viewModelScope.launch {
+            runCatching { repository.deleteTable(tableName) }
+                .onSuccess {
+                    _deleteResult.value = "$tableName 전체 삭제 완료"
+                    loadData()
+                }
+                .onFailure { _deleteResult.value = "삭제 실패: ${it.message}" }
+        }
+    }
+
+    fun clearDeleteResult() {
+        _deleteResult.value = null
     }
 }

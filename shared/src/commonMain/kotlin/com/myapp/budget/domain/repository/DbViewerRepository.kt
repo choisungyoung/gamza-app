@@ -4,4 +4,5 @@ import com.myapp.budget.domain.model.DbTableData
 
 interface DbViewerRepository {
     suspend fun getAllTableData(): List<DbTableData>
+    suspend fun deleteTable(tableName: String)
 }

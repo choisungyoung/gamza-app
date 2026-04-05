@@ -1,6 +1,6 @@
 package com.myapp.budget.ui.fixedexpense
 
-import androidx.activity.compose.BackHandler
+import com.myapp.budget.platform.OnBackPressed
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -61,7 +61,7 @@ fun FixedExpenseScreen(
     onBack: () -> Unit,
     viewModel: FixedExpenseViewModel = koinViewModel()
 ) {
-    BackHandler { onBack() }
+    OnBackPressed(enabled = true) { onBack() }
 
     val fixedExpenses by viewModel.fixedExpenses.collectAsState()
 

@@ -19,26 +19,37 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
+import com.myapp.budget.ui.theme.ExpenseColor
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -67,78 +78,115 @@ fun DbViewerScreen(
 ) {
     val tables by viewModel.tables.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
+    val deleteResult by viewModel.deleteResult.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    Column(modifier = Modifier.fillMaxSize().background(PotatoCream)) {
-        TopAppBar(
-            title = {
-                Column {
-                    Text(
-                        "🔒 DB 데이터 조회",
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color.White
-                    )
-                    Text(
-                        "관리자 전용",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.7f)
-                    )
-                }
+    LaunchedEffect(deleteResult) {
+        deleteResult?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearDeleteResult()
+        }
+    }
+
+    if (showDeleteDialog) {
+        val tableName = tables.getOrNull(selectedTab.coerceAtMost(tables.lastIndex))?.tableName ?: ""
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("전체 삭제", fontWeight = FontWeight.Bold) },
+            text = { Text("${tableName.replace("Entity", "")} 테이블의 모든 데이터를 삭제합니다.\n이 작업은 되돌릴 수 없습니다.") },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.deleteTable(tableName); showDeleteDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = ExpenseColor)
+                ) { Text("삭제") }
             },
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로", tint = Color.White)
-                }
-            },
-            actions = {
-                IconButton(onClick = { viewModel.loadData() }) {
-                    Icon(Icons.Default.Refresh, contentDescription = "새로고침", tint = Color.White)
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = PotatoDark
-            )
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) { Text("취소") }
+            }
         )
+    }
 
-        if (isLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = PotatoBrown)
-            }
-            return@Column
-        }
-
-        if (tables.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("데이터 없음", color = PotatoDeep)
-            }
-            return@Column
-        }
-
-        // 탭: 테이블 이름
-        ScrollableTabRow(
-            selectedTabIndex = selectedTab.coerceAtMost(tables.lastIndex),
-            containerColor = PotatoDark,
-            contentColor = Color.White,
-            edgePadding = 0.dp
-        ) {
-            tables.forEachIndexed { index, table ->
-                Tab(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = {
+    androidx.compose.material3.Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { innerPadding ->
+        Column(modifier = Modifier.fillMaxSize().background(PotatoCream).padding(innerPadding)) {
+            TopAppBar(
+                title = {
+                    Column {
                         Text(
-                            table.tableName.replace("Entity", ""),
+                            "🔒 DB 데이터 조회",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White
+                        )
+                        Text(
+                            "관리자 전용",
                             style = MaterialTheme.typography.labelSmall,
-                            fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
+                            color = Color.White.copy(alpha = 0.7f)
                         )
                     }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로", tint = Color.White)
+                    }
+                },
+                actions = {
+                    if (tables.isNotEmpty()) {
+                        IconButton(onClick = { showDeleteDialog = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = "테이블 삭제", tint = ExpenseColor.copy(alpha = 0.9f))
+                        }
+                    }
+                    IconButton(onClick = { viewModel.loadData() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "새로고침", tint = Color.White)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = PotatoDark
                 )
-            }
-        }
+            )
 
-        val currentTable = tables.getOrNull(selectedTab) ?: return@Column
-        TableContent(table = currentTable)
+            if (isLoading) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = PotatoBrown)
+                }
+                return@Column
+            }
+
+            if (tables.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("데이터 없음", color = PotatoDeep)
+                }
+                return@Column
+            }
+
+            // 탭: 테이블 이름
+            ScrollableTabRow(
+                selectedTabIndex = selectedTab.coerceAtMost(tables.lastIndex),
+                containerColor = PotatoDark,
+                contentColor = Color.White,
+                edgePadding = 0.dp
+            ) {
+                tables.forEachIndexed { index, table ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        text = {
+                            Text(
+                                table.tableName.replace("Entity", ""),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    )
+                }
+            }
+
+            val currentTable = tables.getOrNull(selectedTab) ?: return@Column
+            TableContent(table = currentTable)
+        }
     }
 }
 

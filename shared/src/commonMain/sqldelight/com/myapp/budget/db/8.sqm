@@ -1,0 +1,43 @@
+-- Migration 8: Add book_id to all data tables + auth/book/sync tables
+
+ALTER TABLE TransactionEntity    ADD COLUMN book_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE FixedExpenseEntity   ADD COLUMN book_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE UserCategoryEntity   ADD COLUMN book_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE ParentCategoryEntity ADD COLUMN book_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE AssetGroupEntity     ADD COLUMN book_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE AssetEntity          ADD COLUMN book_id TEXT NOT NULL DEFAULT '';
+
+CREATE TABLE LocalUserEntity (
+    id           TEXT NOT NULL PRIMARY KEY,
+    email        TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    cached_at    TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE BookEntity (
+    id          TEXT NOT NULL PRIMARY KEY,
+    name        TEXT NOT NULL,
+    color_hex   TEXT NOT NULL DEFAULT '#A0522D',
+    icon_emoji  TEXT NOT NULL DEFAULT '📒',
+    owner_id    TEXT NOT NULL,
+    is_selected INTEGER NOT NULL DEFAULT 0,
+    synced_at   TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE BookMemberEntity (
+    id        TEXT NOT NULL PRIMARY KEY,
+    book_id   TEXT NOT NULL,
+    user_id   TEXT NOT NULL,
+    role      TEXT NOT NULL DEFAULT 'VIEWER',
+    joined_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE SyncQueueEntity (
+    id          INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    operation   TEXT NOT NULL,
+    table_name  TEXT NOT NULL,
+    record_id   TEXT NOT NULL,
+    payload     TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT '',
+    retry_count INTEGER NOT NULL DEFAULT 0
+);

@@ -1,6 +1,6 @@
 package com.myapp.budget.ui.datamanagement
 
-import androidx.activity.compose.BackHandler
+import com.myapp.budget.platform.OnBackPressed
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -70,7 +70,7 @@ fun DataManagementScreen(
     onBack: () -> Unit,
     viewModel: DataManagementViewModel = koinViewModel()
 ) {
-    BackHandler { onBack() }
+    OnBackPressed(enabled = true) { onBack() }
 
     val state by viewModel.uiState.collectAsState()
     var showImportConfirm by remember { mutableStateOf(false) }

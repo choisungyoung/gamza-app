@@ -10,6 +10,18 @@ class DbViewerRepositoryImpl(
     private val database: BudgetDatabase
 ) : DbViewerRepository {
 
+    override suspend fun deleteTable(tableName: String) = withContext(Dispatchers.Default) {
+        val q = database.budgetQueries
+        when (tableName) {
+            "TransactionEntity" -> q.deleteAllTransactions()
+            "FixedExpenseEntity" -> q.deleteAllFixedExpenses()
+            "UserCategoryEntity" -> q.deleteAllUserCategories()
+            "ParentCategoryEntity" -> q.deleteAllParentCategories()
+            "AssetGroupEntity" -> q.deleteAllAssetGroups()
+            "AssetEntity" -> q.deleteAllAssets()
+        }
+    }
+
     override suspend fun getAllTableData(): List<DbTableData> = withContext(Dispatchers.Default) {
         val q = database.budgetQueries
         listOf(

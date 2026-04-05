@@ -2,46 +2,91 @@ package com.myapp.budget.data.repository
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
+import com.myapp.budget.data.remote.FixedExpenseRemoteDto
 import com.myapp.budget.db.BudgetDatabase
+import com.myapp.budget.domain.SessionManager
 import com.myapp.budget.domain.model.FixedExpense
 import com.myapp.budget.domain.repository.FixedExpenseRepository
+import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.minus
 
 class FixedExpenseRepositoryImpl(
-    private val database: BudgetDatabase
+    private val database: BudgetDatabase,
+    private val sessionManager: SessionManager,
+    private val supabase: SupabaseClient,
 ) : FixedExpenseRepository {
 
     private val queries = database.budgetQueries
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun getAll(): Flow<List<FixedExpense>> =
-        queries.selectAllFixedExpenses()
-            .asFlow()
-            .mapToList(Dispatchers.Default)
-            .map { list -> list.map { it.toModel() } }
+        sessionManager.activeBook.flatMapLatest { book ->
+            val bookId = book?.id ?: ""
+            if (bookId.isNotBlank()) {
+                queries.selectFixedExpensesByBookId(bookId).asFlow().mapToList(Dispatchers.Default)
+            } else {
+                queries.selectAllFixedExpenses().asFlow().mapToList(Dispatchers.Default)
+            }
+        }.map { list -> list.map { it.toModel() } }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun getAllIncludingInactive(): Flow<List<FixedExpense>> =
-        queries.selectAllFixedExpensesIncludingInactive()
-            .asFlow()
-            .mapToList(Dispatchers.Default)
-            .map { list -> list.map { it.toModel() } }
+        sessionManager.activeBook.flatMapLatest { book ->
+            val bookId = book?.id ?: ""
+            if (bookId.isNotBlank()) {
+                queries.selectAllFixedExpensesIncludingInactiveByBookId(bookId).asFlow().mapToList(Dispatchers.Default)
+            } else {
+                queries.selectAllFixedExpensesIncludingInactive().asFlow().mapToList(Dispatchers.Default)
+            }
+        }.map { list -> list.map { it.toModel() } }
 
     override suspend fun insert(fixedExpense: FixedExpense): Long {
-        queries.insertFixedExpense(
-            title = fixedExpense.title,
-            amount = fixedExpense.amount,
-            category = fixedExpense.category,
-            asset = fixedExpense.asset,
-            day_of_month = fixedExpense.dayOfMonth.toLong(),
-            start_year = fixedExpense.startYear.toLong(),
-            start_month = fixedExpense.startMonth.toLong(),
-            note = fixedExpense.note
-        )
-        return queries.lastFixedExpenseRowId().executeAsOne()
+        val bookId = sessionManager.activeBookId ?: ""
+        if (bookId.isNotBlank()) {
+            queries.insertFixedExpenseWithBook(
+                title = fixedExpense.title,
+                amount = fixedExpense.amount,
+                category = fixedExpense.category,
+                asset = fixedExpense.asset,
+                day_of_month = fixedExpense.dayOfMonth.toLong(),
+                start_year = fixedExpense.startYear.toLong(),
+                start_month = fixedExpense.startMonth.toLong(),
+                note = fixedExpense.note,
+                book_id = bookId,
+            )
+            val localId = queries.lastFixedExpenseRowId().executeAsOne()
+            runCatching {
+                val dto = supabase.postgrest.from("fixed_expenses").insert(
+                    FixedExpenseRemoteDto(bookId = bookId, title = fixedExpense.title,
+                        amount = fixedExpense.amount, category = fixedExpense.category,
+                        asset = fixedExpense.asset, dayOfMonth = fixedExpense.dayOfMonth,
+                        startYear = fixedExpense.startYear, startMonth = fixedExpense.startMonth,
+                        note = fixedExpense.note, isActive = true)
+                ) { select() }.decodeSingle<FixedExpenseRemoteDto>()
+                queries.updateFixedExpenseRemoteId(dto.id, localId)
+            }
+            return localId
+        } else {
+            queries.insertFixedExpense(
+                title = fixedExpense.title,
+                amount = fixedExpense.amount,
+                category = fixedExpense.category,
+                asset = fixedExpense.asset,
+                day_of_month = fixedExpense.dayOfMonth.toLong(),
+                start_year = fixedExpense.startYear.toLong(),
+                start_month = fixedExpense.startMonth.toLong(),
+                note = fixedExpense.note
+            )
+            return queries.lastFixedExpenseRowId().executeAsOne()
+        }
     }
 
     override suspend fun update(id: Long, title: String, amount: Long, dayOfMonth: Int, note: String) {
@@ -52,10 +97,27 @@ class FixedExpenseRepositoryImpl(
             note = note,
             id = id
         )
+        val remoteId = queries.selectFixedExpenseRemoteId(id).executeAsOneOrNull()
+        if (!remoteId.isNullOrBlank()) {
+            runCatching {
+                supabase.postgrest.from("fixed_expenses").update({
+                    set("title", title)
+                    set("amount", amount)
+                    set("day_of_month", dayOfMonth)
+                    set("note", note)
+                }) { filter { eq("id", remoteId) } }
+            }
+        }
     }
 
     override suspend fun delete(id: Long) {
+        val remoteId = queries.selectFixedExpenseRemoteId(id).executeAsOneOrNull()
         queries.deleteFixedExpense(id)
+        if (!remoteId.isNullOrBlank()) {
+            runCatching {
+                supabase.postgrest.from("fixed_expenses").delete { filter { eq("id", remoteId) } }
+            }
+        }
     }
 
     override suspend fun countLinkedTransactions(id: Long): Long =
@@ -63,6 +125,14 @@ class FixedExpenseRepositoryImpl(
 
     override suspend fun deactivate(id: Long) {
         queries.deactivateFixedExpense(id)
+        val remoteId = queries.selectFixedExpenseRemoteId(id).executeAsOneOrNull()
+        if (!remoteId.isNullOrBlank()) {
+            runCatching {
+                supabase.postgrest.from("fixed_expenses").update({ set("is_active", false) }) {
+                    filter { eq("id", remoteId) }
+                }
+            }
+        }
     }
 
     override suspend fun detachFromDate(id: Long, fromDateStr: String) {
@@ -70,24 +140,23 @@ class FixedExpenseRepositoryImpl(
     }
 
     override suspend fun autoRegisterPending(today: LocalDate) {
-        // is_active = 1 인 고정지출만 처리 (해제된 항목 제외)
-        val allFixed = queries.selectAllFixedExpenses().executeAsList()
+        val bookId = sessionManager.activeBookId ?: ""
+        val allFixed = if (bookId.isNotBlank()) {
+            queries.selectFixedExpensesByBookId(bookId).executeAsList()
+        } else {
+            queries.selectAllFixedExpenses().executeAsList()
+        }
         for (fe in allFixed) {
-            // 이미 등록된 거래의 "YYYY-MM" 목록 수집
             val existingMonthKeys = queries.selectByFixedExpenseId(fe.id)
                 .executeAsList()
                 .map { it.date.substring(0, 7) }
 
-            // 마지막 등록된 월을 시작점으로 사용
-            // 등록된 거래가 없으면 start_year/start_month 부터 시작
             val (startYear, startMonth) = if (existingMonthKeys.isEmpty()) {
                 fe.start_year.toInt() to fe.start_month.toInt()
             } else {
-                // "YYYY-MM" 은 사전순 비교로 최신값을 구할 수 있음
                 val lastKey = existingMonthKeys.max()
                 val lYear = lastKey.substring(0, 4).toInt()
                 val lMonth = lastKey.substring(5, 7).toInt()
-                // 마지막 등록 월의 다음 달부터 등록
                 if (lMonth == 12) lYear + 1 to 1 else lYear to lMonth + 1
             }
 
@@ -98,18 +167,32 @@ class FixedExpenseRepositoryImpl(
                 val monthKey = "$year-${month.toString().padStart(2, '0')}"
                 val day = clampDay(year, month, fe.day_of_month.toInt())
                 val dateStr = "$monthKey-${day.toString().padStart(2, '0')}"
-                queries.insert(
-                    title = fe.title,
-                    amount = fe.amount,
-                    type = "EXPENSE",
-                    category = fe.category,
-                    date = dateStr,
-                    time = "00:00:00",
-                    note = fe.note,
-                    asset = fe.asset,
-                    to_asset = "",
-                    fixed_expense_id = fe.id
-                )
+                if (bookId.isNotBlank()) {
+                    queries.insertWithBook(
+                        title = fe.title, amount = fe.amount, type = "EXPENSE",
+                        category = fe.category, category_emoji = "", date = dateStr, time = "00:00:00",
+                        note = fe.note, asset = fe.asset, to_asset = "",
+                        fixed_expense_id = fe.id, book_id = bookId,
+                    )
+                    val localId = queries.lastInsertRowId().executeAsOne()
+                    runCatching {
+                        val createdBy = ""
+                        val dto = supabase.postgrest.from("transactions").insert(
+                            com.myapp.budget.data.remote.TransactionRemoteDto(
+                                bookId = bookId, title = fe.title, amount = fe.amount,
+                                type = "EXPENSE", category = fe.category, date = dateStr,
+                                time = "00:00:00", note = fe.note, asset = fe.asset, createdBy = createdBy)
+                        ) { select() }.decodeSingle<com.myapp.budget.data.remote.TransactionRemoteDto>()
+                        queries.updateTransactionRemoteId(dto.id, localId)
+                    }
+                } else {
+                    queries.insert(
+                        title = fe.title, amount = fe.amount, type = "EXPENSE",
+                        category = fe.category, category_emoji = "", date = dateStr, time = "00:00:00",
+                        note = fe.note, asset = fe.asset, to_asset = "",
+                        fixed_expense_id = fe.id
+                    )
+                }
                 if (month == 12) { year++; month = 1 } else month++
             }
         }

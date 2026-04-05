@@ -10,6 +10,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,11 +27,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -47,8 +51,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,10 +64,23 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.collectAsState
+import com.myapp.budget.domain.SessionManager
+import com.myapp.budget.domain.repository.AuthRepository
+import com.myapp.budget.domain.repository.BookRepository
+import com.myapp.budget.domain.model.LocalUser
 import com.myapp.budget.platform.BackPressExitHandler
 import com.myapp.budget.platform.OnBackPressed
 import com.myapp.budget.ui.addedit.AddEditScreen
 import com.myapp.budget.ui.asset.AssetScreen
+import com.myapp.budget.ui.auth.LoginScreen
+import com.myapp.budget.ui.auth.SignupScreen
+import com.myapp.budget.ui.book.BookListScreen
+import com.myapp.budget.ui.book.BookSettingsScreen
+import com.myapp.budget.ui.book.CreateBookScreen
+import com.myapp.budget.ui.book.EditBookScreen
+import com.myapp.budget.ui.book.InviteScreen
+import com.myapp.budget.ui.book.MemberManagementScreen
 import com.myapp.budget.ui.category.CategoryManagementScreen
 import com.myapp.budget.ui.components.PotatoCharacter
 import com.myapp.budget.ui.datamanagement.DataManagementScreen
@@ -78,6 +97,7 @@ import com.myapp.budget.ui.theme.PotatoDark
 import com.myapp.budget.ui.theme.PotatoDeep
 import com.myapp.budget.ui.theme.PotatoLight
 import com.myapp.budget.ui.transactions.TransactionListScreen
+import org.koin.compose.koinInject
 
 @Stable
 sealed class Screen {
@@ -91,26 +111,90 @@ sealed class Screen {
     data class DataManagement(val previousScreen: Screen = Home) : Screen()
     data class DbViewer(val previousScreen: Screen = Home) : Screen()
     data class AddEdit(val transactionId: Long? = null, val previousScreen: Screen = Home) : Screen()
+
+    // Auth
+    data object Login : Screen()
+    data object Signup : Screen()
+
+    // Book
+    data object BookList : Screen()
+    data class CreateBook(val previousScreen: Screen = Home) : Screen()
+    data class BookSettings(val bookId: String, val previousScreen: Screen = Home) : Screen()
+    data class EditBook(val bookId: String, val previousScreen: Screen = Home, val readOnly: Boolean = false) : Screen()
+    data class Invite(val bookId: String, val previousScreen: Screen = Home) : Screen()
+    data class MemberManagement(val bookId: String, val previousScreen: Screen = Home) : Screen()
 }
 
 @Composable
 fun App() {
     BudgetTheme {
+        val authRepository: AuthRepository = koinInject()
+        val authUser by authRepository.authStateFlow().collectAsState(initial = null)
+        var authResolved by remember { mutableStateOf(false) }
         var showSplash by remember { mutableStateOf(true) }
 
-        if (showSplash) {
+        val bookRepository: BookRepository = koinInject()
+        val sessionManager: SessionManager = koinInject()
+
+        // SessionManager 동기화: DB 선택 가계부 → SessionManager
+        LaunchedEffect(Unit) {
+            bookRepository.getSelectedBook().collect { book ->
+                sessionManager.setActiveBook(book)
+            }
+        }
+
+        // 로그인/로그아웃 시 처리
+        var prevAuthUser by remember { mutableStateOf<LocalUser?>(null) }
+        LaunchedEffect(authUser) {
+            sessionManager.setUser(authUser)
+            if (authUser != null && prevAuthUser == null) {
+                // 첫 로그인 시: 서버 동기화 → 오프라인 데이터 이관
+                runCatching { bookRepository.syncBooks() }
+                    .onFailure { println("[App] syncBooks failed: ${it.message}") }
+                runCatching {
+                    val migrated = bookRepository.migrateOfflineData()
+                    if (migrated != null) sessionManager.setActiveBook(migrated)
+                }.onFailure { println("[App] migrateOfflineData failed: ${it.message}") }
+            } else if (authUser == null) {
+                sessionManager.clear()
+            }
+            prevAuthUser = authUser
+        }
+
+        // Supabase 세션 복원 대기 (최대 2초)
+        LaunchedEffect(Unit) {
+            delay(1500)
+            authResolved = true
+        }
+        LaunchedEffect(authUser) {
+            if (authUser != null) authResolved = true
+        }
+
+        if (showSplash || !authResolved) {
             SplashScreen(onFinished = { showSplash = false })
             return@BudgetTheme
         }
 
+        val scope = rememberCoroutineScope()
         var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
+        var postLoginDestination by remember { mutableStateOf<Screen?>(null) }
         var drawerOpen by remember { mutableStateOf(false) }
         var isAdminMode by remember { mutableStateOf(false) }
         var potatoClickCount by remember { mutableIntStateOf(0) }
         var toastMessage by remember { mutableStateOf("") }
+        var showLogoutDialog by remember { mutableStateOf(false) }
 
-        // Stable lambda references — prevent screens from recomposing when drawerOpen changes
-        val onNavigate: (Screen) -> Unit = remember { { screen -> currentScreen = screen } }
+        val navigateWithAuthGuard: (Screen) -> Unit = remember(authUser) { { screen ->
+            val isBookScreen = screen is Screen.BookList || screen is Screen.CreateBook
+                || screen is Screen.BookSettings || screen is Screen.Invite
+                || screen is Screen.MemberManagement
+            if (isBookScreen && authUser == null) {
+                postLoginDestination = screen
+                currentScreen = Screen.Login
+            } else {
+                currentScreen = screen
+            }
+        }}
         val onMenuClick: () -> Unit = remember { { drawerOpen = true } }
 
         val isMainTab = currentScreen is Screen.Home
@@ -119,12 +203,20 @@ fun App() {
                 || currentScreen is Screen.Assets
         BackPressExitHandler(enabled = isMainTab && !drawerOpen)
         OnBackPressed(enabled = drawerOpen) { drawerOpen = false }
+        OnBackPressed(enabled = currentScreen is Screen.Login || currentScreen is Screen.Signup) {
+            currentScreen = Screen.Home
+        }
 
         Box(modifier = Modifier.fillMaxSize()) {
             AppContent(
                 currentScreen = currentScreen,
-                onNavigate = onNavigate,
-                onMenuClick = onMenuClick
+                onNavigate = navigateWithAuthGuard,
+                onMenuClick = onMenuClick,
+                onLoginSuccess = {
+                    val dest = postLoginDestination ?: Screen.Home
+                    postLoginDestination = null
+                    currentScreen = dest
+                }
             )
 
             // 스크림
@@ -175,7 +267,44 @@ fun App() {
                     onDbViewerClick = {
                         drawerOpen = false
                         currentScreen = Screen.DbViewer(currentScreen)
-                    }
+                    },
+                    onBookListClick = {
+                        drawerOpen = false
+                        navigateWithAuthGuard(Screen.BookList)
+                    },
+                    currentUserEmail = authUser?.email,
+                    activeBook = sessionManager.activeBook.collectAsState().value,
+                    onLoginClick = {
+                        drawerOpen = false
+                        currentScreen = Screen.Login
+                    },
+                    onLogoutClick = { showLogoutDialog = true },
+                )
+            }
+
+            // 로그아웃 확인 다이얼로그
+            if (showLogoutDialog) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { showLogoutDialog = false },
+                    title = { Text("로그아웃") },
+                    text = { Text("로그아웃하면 오프라인 모드로 전환됩니다.\n로그아웃 하시겠습니까?") },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(
+                            onClick = {
+                                showLogoutDialog = false
+                                drawerOpen = false
+                                scope.launch { authRepository.signOut() }
+                            },
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) { Text("로그아웃") }
+                    },
+                    dismissButton = {
+                        androidx.compose.material3.TextButton(onClick = { showLogoutDialog = false }) {
+                            Text("취소")
+                        }
+                    },
                 )
             }
 
@@ -214,7 +343,8 @@ fun App() {
 private fun AppContent(
     currentScreen: Screen,
     onNavigate: (Screen) -> Unit,
-    onMenuClick: () -> Unit
+    onMenuClick: () -> Unit,
+    onLoginSuccess: () -> Unit,
 ) {
     val showBottomBar = currentScreen !is Screen.AddEdit
             && currentScreen !is Screen.CategoryManagement
@@ -222,6 +352,14 @@ private fun AppContent(
             && currentScreen !is Screen.Search
             && currentScreen !is Screen.DataManagement
             && currentScreen !is Screen.DbViewer
+            && currentScreen !is Screen.BookList
+            && currentScreen !is Screen.CreateBook
+            && currentScreen !is Screen.BookSettings
+            && currentScreen !is Screen.EditBook
+            && currentScreen !is Screen.Invite
+            && currentScreen !is Screen.MemberManagement
+            && currentScreen !is Screen.Login
+            && currentScreen !is Screen.Signup
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -292,9 +430,16 @@ private fun AppContent(
         AnimatedContent(
             targetState = currentScreen,
             transitionSpec = {
-                if (targetState is Screen.AddEdit || targetState is Screen.CategoryManagement || targetState is Screen.FixedExpenses || targetState is Screen.Search || targetState is Screen.DataManagement || targetState is Screen.DbViewer) {
+                val isSubScreen = { s: Screen ->
+                    s is Screen.AddEdit || s is Screen.CategoryManagement || s is Screen.FixedExpenses
+                    || s is Screen.Search || s is Screen.DataManagement || s is Screen.DbViewer
+                    || s is Screen.BookList || s is Screen.CreateBook || s is Screen.BookSettings
+                    || s is Screen.EditBook || s is Screen.Invite || s is Screen.MemberManagement
+                    || s is Screen.Login || s is Screen.Signup
+                }
+                if (isSubScreen(targetState)) {
                     slideInHorizontally { it } togetherWith slideOutHorizontally { -it }
-                } else if (initialState is Screen.AddEdit || initialState is Screen.CategoryManagement || initialState is Screen.FixedExpenses || initialState is Screen.Search || initialState is Screen.DataManagement || initialState is Screen.DbViewer) {
+                } else if (isSubScreen(initialState)) {
                     slideInHorizontally { -it } togetherWith slideOutHorizontally { it }
                 } else {
                     fadeIn() togetherWith fadeOut()
@@ -341,6 +486,46 @@ private fun AppContent(
                     transactionId = screen.transactionId,
                     onBack = { onNavigate(screen.previousScreen) }
                 )
+                is Screen.BookList -> BookListScreen(
+                    onBack = { onNavigate(Screen.Home) },
+                    onNavigateToCreate = { onNavigate(Screen.CreateBook(Screen.BookList)) },
+                    onNavigateToSettings = { bookId -> onNavigate(Screen.BookSettings(bookId, Screen.BookList)) },
+                    onBookSelected = { onNavigate(Screen.Home) },
+                )
+                is Screen.CreateBook -> CreateBookScreen(
+                    onBack = { onNavigate(screen.previousScreen) },
+                    onCreated = { onNavigate(Screen.Home) },
+                )
+                is Screen.BookSettings -> BookSettingsScreen(
+                    bookId = screen.bookId,
+                    onBack = { onNavigate(screen.previousScreen) },
+                    onNavigateToEdit = { bookId, readOnly -> onNavigate(Screen.EditBook(bookId, screen, readOnly)) },
+                    onNavigateToInvite = { bookId -> onNavigate(Screen.Invite(bookId, screen)) },
+                    onNavigateToMembers = { bookId -> onNavigate(Screen.MemberManagement(bookId, screen)) },
+                    onBookDeleted = { onNavigate(Screen.Home) },
+                    onBookLeft = { onNavigate(Screen.Home) },
+                )
+                is Screen.EditBook -> EditBookScreen(
+                    bookId = screen.bookId,
+                    readOnly = screen.readOnly,
+                    onBack = { onNavigate(screen.previousScreen) },
+                    onSaved = { onNavigate(screen.previousScreen) },
+                )
+                is Screen.Invite -> InviteScreen(
+                    bookId = screen.bookId,
+                    onBack = { onNavigate(screen.previousScreen) },
+                )
+                is Screen.MemberManagement -> MemberManagementScreen(
+                    bookId = screen.bookId,
+                    onBack = { onNavigate(screen.previousScreen) },
+                )
+                is Screen.Login -> LoginScreen(
+                    onNavigateToSignup = { onNavigate(Screen.Signup) },
+                    onLoginSuccess = onLoginSuccess,
+                )
+                is Screen.Signup -> SignupScreen(
+                    onBack = { onNavigate(Screen.Login) },
+                )
             }
         }
     }
@@ -352,7 +537,12 @@ private fun AppDrawer(
     onPotatoClick: () -> Unit,
     onCategoryManagementClick: () -> Unit,
     onDataManagementClick: () -> Unit,
-    onDbViewerClick: () -> Unit
+    onDbViewerClick: () -> Unit,
+    onBookListClick: () -> Unit,
+    currentUserEmail: String?,
+    activeBook: com.myapp.budget.domain.model.Book?,
+    onLoginClick: () -> Unit,
+    onLogoutClick: () -> Unit,
 ) {
     val gradient = Brush.horizontalGradient(
         colors = listOf(PotatoBrown, Color(0xFFFFBD5E), PotatoDark)
@@ -409,14 +599,47 @@ private fun AppDrawer(
                     color = Color.White
                 )
                 Text(
-                    text = if (isAdminMode) "🔒 관리자 모드 활성화됨" else "내 돈을 알뜰하게 관리해요",
+                    text = when {
+                        isAdminMode -> "🔒 관리자 모드 활성화됨"
+                        currentUserEmail != null -> currentUserEmail
+                        else -> "오프라인 모드"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isAdminMode) Color(0xFFFFD700) else Color.White.copy(alpha = 0.75f)
                 )
+                activeBook?.let { book ->
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.White.copy(alpha = 0.2f))
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(book.iconEmoji, fontSize = 14.sp)
+                        Text(
+                            book.name,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White,
+                        )
+                    }
+                }
             }
         }
 
         Spacer(Modifier.height(12.dp))
+
+        DrawerMenuItem(
+            icon = Icons.Default.SwapHoriz,
+            label = "가계부 전환",
+            onClick = onBookListClick,
+        )
+
+        HorizontalDivider(
+            modifier = Modifier.padding(horizontal = 20.dp),
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+        )
 
         DrawerMenuItem(
             icon = Icons.Default.Category,
@@ -452,6 +675,29 @@ private fun AppDrawer(
             HorizontalDivider(
                 modifier = Modifier.padding(horizontal = 20.dp),
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+            )
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        HorizontalDivider(
+            modifier = Modifier.padding(horizontal = 20.dp),
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+        )
+
+        if (currentUserEmail != null) {
+            DrawerMenuItem(
+                icon = Icons.Default.ExitToApp,
+                label = "로그아웃",
+                onClick = onLogoutClick,
+                tint = MaterialTheme.colorScheme.error,
+            )
+        } else {
+            DrawerMenuItem(
+                icon = Icons.Default.AccountCircle,
+                label = "로그인",
+                onClick = onLoginClick,
+                tint = PotatoBrown,
             )
         }
     }

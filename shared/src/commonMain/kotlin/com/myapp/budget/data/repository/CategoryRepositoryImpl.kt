@@ -2,21 +2,30 @@ package com.myapp.budget.data.repository
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
+import com.myapp.budget.data.remote.ParentCategoryRemoteDto
+import com.myapp.budget.data.remote.UserCategoryRemoteDto
 import com.myapp.budget.db.BudgetDatabase
 import com.myapp.budget.db.ParentCategoryEntity
 import com.myapp.budget.db.UserCategoryEntity
+import com.myapp.budget.domain.SessionManager
 import com.myapp.budget.domain.model.Category
 import com.myapp.budget.domain.model.ParentCategory
 import com.myapp.budget.domain.model.TransactionType
 import com.myapp.budget.domain.model.UserCategory
 import com.myapp.budget.domain.repository.CategoryRepository
+import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
-class CategoryRepositoryImpl(private val db: BudgetDatabase) : CategoryRepository {
+class CategoryRepositoryImpl(
+    private val db: BudgetDatabase,
+    private val sessionManager: SessionManager,
+    private val supabase: SupabaseClient,
+) : CategoryRepository {
 
     private val q = db.budgetQueries
 
@@ -36,25 +45,81 @@ class CategoryRepositoryImpl(private val db: BudgetDatabase) : CategoryRepositor
             .map { it.map { e -> e.toParentModel() } }
 
     override suspend fun insert(category: UserCategory) = withContext(Dispatchers.Default) {
+        val bookId = sessionManager.activeBookId ?: ""
         val maxOrder = q.maxUserCategorySortOrder(category.parentId).executeAsOne()
-        q.insertUserCategory(category.name, category.emoji, category.parentId, category.type.name, maxOrder + 1)
+        if (bookId.isNotBlank()) {
+            q.insertUserCategoryWithBook(category.name, category.emoji, category.parentId, category.type.name, maxOrder + 1, bookId)
+            val localId = q.lastInsertRowId().executeAsOne()
+            val parentRemoteId = q.selectParentCategoryRemoteId(category.parentId).executeAsOneOrNull()
+            if (!parentRemoteId.isNullOrBlank()) {
+                runCatching {
+                    val dto = supabase.postgrest.from("user_categories").insert(
+                        UserCategoryRemoteDto(bookId = bookId, name = category.name, emoji = category.emoji,
+                            parentRemoteId = parentRemoteId, type = category.type.name, sortOrder = (maxOrder + 1).toInt())
+                    ) { select() }.decodeSingle<UserCategoryRemoteDto>()
+                    q.updateUserCategoryRemoteId(dto.id, localId)
+                }
+            }
+        } else {
+            q.insertUserCategory(category.name, category.emoji, category.parentId, category.type.name, maxOrder + 1)
+        }
+        Unit
     }
 
     override suspend fun insertParent(name: String, emoji: String, type: TransactionType) = withContext(Dispatchers.Default) {
+        val bookId = sessionManager.activeBookId ?: ""
         val maxOrder = q.maxParentSortOrderByType(type.name).executeAsOne()
-        q.insertParent(name.trim(), emoji.ifBlank { "📌" }, type.name, maxOrder + 1)
+        if (bookId.isNotBlank()) {
+            q.insertParentWithBook(name.trim(), emoji.ifBlank { "📌" }, type.name, maxOrder + 1, bookId)
+            val localId = q.lastInsertRowId().executeAsOne()
+            runCatching {
+                val dto = supabase.postgrest.from("parent_categories").insert(
+                    ParentCategoryRemoteDto(bookId = bookId, name = name.trim(),
+                        emoji = emoji.ifBlank { "📌" }, type = type.name, sortOrder = (maxOrder + 1).toInt())
+                ) { select() }.decodeSingle<ParentCategoryRemoteDto>()
+                q.updateParentCategoryRemoteId(dto.id, localId)
+            }
+        } else {
+            q.insertParent(name.trim(), emoji.ifBlank { "📌" }, type.name, maxOrder + 1)
+        }
+        Unit
     }
 
     override suspend fun update(id: Long, name: String, emoji: String) = withContext(Dispatchers.Default) {
         q.updateUserCategory(name, emoji, id)
+        val remoteId = q.selectUserCategoryRemoteId(id).executeAsOneOrNull()
+        if (!remoteId.isNullOrBlank()) {
+            runCatching {
+                supabase.postgrest.from("user_categories").update({
+                    set("name", name); set("emoji", emoji)
+                }) { filter { eq("id", remoteId) } }
+            }
+        }
+        Unit
     }
 
     override suspend fun delete(id: Long) = withContext(Dispatchers.Default) {
+        val remoteId = q.selectUserCategoryRemoteId(id).executeAsOneOrNull()
         q.deleteUserCategory(id)
+        if (!remoteId.isNullOrBlank()) {
+            runCatching {
+                supabase.postgrest.from("user_categories").delete { filter { eq("id", remoteId) } }
+            }
+        }
+        Unit
     }
 
     override suspend fun updateParent(id: Long, name: String, emoji: String) = withContext(Dispatchers.Default) {
         q.updateParent(name, emoji, id)
+        val remoteId = q.selectParentCategoryRemoteId(id).executeAsOneOrNull()
+        if (!remoteId.isNullOrBlank()) {
+            runCatching {
+                supabase.postgrest.from("parent_categories").update({
+                    set("name", name); set("emoji", emoji)
+                }) { filter { eq("id", remoteId) } }
+            }
+        }
+        Unit
     }
 
     override suspend fun moveParentUp(id: Long, type: TransactionType) = withContext(Dispatchers.Default) {

@@ -3,7 +3,7 @@ package com.myapp.budget.ui.addedit
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.activity.compose.BackHandler
+import com.myapp.budget.platform.OnBackPressed
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -120,7 +120,7 @@ fun AddEditScreen(
         }
     }
 
-    BackHandler { onBack() }
+    OnBackPressed(enabled = true) { onBack() }
 
     val accentColor = when (viewModel.transactionType) {
         TransactionType.EXPENSE -> ExpenseColor

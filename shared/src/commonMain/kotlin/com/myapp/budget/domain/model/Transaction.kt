@@ -18,5 +18,7 @@ data class Transaction(
     val note: String = "",
     val asset: String = "",    // 지출: 결제수단 / 수입: 입금계좌 / 이체: 출금계좌
     val toAsset: String = "",  // 이체: 입금계좌 (지출/수입은 빈 문자열)
-    val fixedExpenseId: Long? = null
+    val fixedExpenseId: Long? = null,
+    val createdBy: String = "",
+    val categoryEmoji: String = "",
 )
