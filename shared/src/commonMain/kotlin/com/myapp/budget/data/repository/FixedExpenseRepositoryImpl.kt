@@ -126,49 +126,56 @@ class FixedExpenseRepositoryImpl(
 
     override suspend fun autoRegisterPending(today: LocalDate) {
         val bookId = sessionManager.activeBookId ?: return
+        val userId = sessionManager.currentUser.value?.id ?: return
+
+        // VIEWER는 자동 등록 스킵 (쓰기 권한 없음)
+        val memberRole = queries.selectMemberRoleByBookAndUser(bookId, userId)
+            .executeAsOneOrNull()
+            ?.let { runCatching { com.myapp.budget.domain.model.MemberRole.valueOf(it) }.getOrNull() }
+        // BookMemberEntity에 없으면 가계부 소유자 → 쓰기 허용
+        val isOwner = memberRole == null
+        if (!isOwner && memberRole?.canWrite() != true) return
+
         val allFixed = queries.selectFixedExpensesByBookId(bookId).executeAsList()
 
         for (fe in allFixed) {
+            // 이미 등록된 월 키 Set으로 수집 (중간 공백 포함 전체 체크)
             val existingMonthKeys = queries.selectByFixedExpenseId(fe.id)
                 .executeAsList()
-                .map { it.date.substring(0, 7) }
+                .mapTo(mutableSetOf()) { it.date.substring(0, 7) }
 
-            val (startYear, startMonth) = if (existingMonthKeys.isEmpty()) {
-                fe.start_year.toInt() to fe.start_month.toInt()
-            } else {
-                val lastKey = existingMonthKeys.max()
-                val lYear = lastKey.substring(0, 4).toInt()
-                val lMonth = lastKey.substring(5, 7).toInt()
-                if (lMonth == 12) lYear + 1 to 1 else lYear to lMonth + 1
-            }
-
-            var year = startYear
-            var month = startMonth
+            var year = fe.start_year.toInt()
+            var month = fe.start_month.toInt()
 
             while (year < today.year || (year == today.year && month <= today.monthNumber)) {
                 val monthKey = "$year-${month.toString().padStart(2, '0')}"
-                val day = clampDay(year, month, fe.day_of_month.toInt())
-                val dateStr = "$monthKey-${day.toString().padStart(2, '0')}"
 
-                // 서버에 먼저 저장
-                runCatching {
-                    val dto = supabase.postgrest.from("transactions").insert(
-                        TransactionRemoteDto(
-                            bookId = bookId, title = fe.title, amount = fe.amount,
-                            type = "EXPENSE", category = fe.category, date = dateStr,
-                            time = "00:00:00", note = fe.note, asset = fe.asset, createdBy = ""
+                if (monthKey !in existingMonthKeys) {
+                    val day = clampDay(year, month, fe.day_of_month.toInt())
+                    val dateStr = "$monthKey-${day.toString().padStart(2, '0')}"
+                    val feRemoteId = fe.remote_id.takeIf { it.isNotBlank() }
+
+                    // Supabase에 먼저 저장 (unique 제약으로 중복 방지)
+                    runCatching {
+                        val dto = supabase.postgrest.from("transactions").insert(
+                            TransactionRemoteDto(
+                                bookId = bookId, title = fe.title, amount = fe.amount,
+                                type = "EXPENSE", category = fe.category, date = dateStr,
+                                time = "00:00:00", note = fe.note, asset = fe.asset,
+                                createdBy = userId, fixedExpenseId = feRemoteId
+                            )
+                        ) { select() }.decodeSingle<TransactionRemoteDto>()
+
+                        // 로컬 캐시 업데이트
+                        queries.insertWithBookAndCreator(
+                            title = fe.title, amount = fe.amount, type = "EXPENSE",
+                            category = fe.category, category_emoji = "", date = dateStr,
+                            time = "00:00:00", note = fe.note, asset = fe.asset, to_asset = "",
+                            fixed_expense_id = fe.id, book_id = bookId, created_by = userId,
                         )
-                    ) { select() }.decodeSingle<TransactionRemoteDto>()
-
-                    // 로컬 캐시 업데이트
-                    queries.insertWithBook(
-                        title = fe.title, amount = fe.amount, type = "EXPENSE",
-                        category = fe.category, category_emoji = "", date = dateStr,
-                        time = "00:00:00", note = fe.note, asset = fe.asset, to_asset = "",
-                        fixed_expense_id = fe.id, book_id = bookId,
-                    )
-                    val localId = queries.lastInsertRowId().executeAsOne()
-                    queries.updateTransactionRemoteId(dto.id, localId)
+                        val localId = queries.lastInsertRowId().executeAsOne()
+                        queries.updateTransactionRemoteId(dto.id, localId)
+                    }
                 }
 
                 if (month == 12) { year++; month = 1 } else month++

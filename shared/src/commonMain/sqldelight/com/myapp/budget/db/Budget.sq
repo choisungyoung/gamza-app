@@ -327,6 +327,9 @@ CREATE TABLE BookMemberEntity (
 selectMembersByBook:
 SELECT * FROM BookMemberEntity WHERE book_id = ?;
 
+selectMemberRoleByBookAndUser:
+SELECT role FROM BookMemberEntity WHERE book_id = ? AND user_id = ?;
+
 upsertBookMember:
 INSERT OR REPLACE INTO BookMemberEntity (id, book_id, user_id, role, joined_at)
 VALUES (?, ?, ?, ?, ?);
@@ -412,6 +415,9 @@ UPDATE FixedExpenseEntity SET remote_id = ? WHERE id = ?;
 
 selectFixedExpenseRemoteId:
 SELECT remote_id FROM FixedExpenseEntity WHERE id = ?;
+
+selectFixedExpenseIdByRemoteId:
+SELECT id FROM FixedExpenseEntity WHERE remote_id = ?;
 
 updateParentCategoryRemoteId:
 UPDATE ParentCategoryEntity SET remote_id = ? WHERE id = ?;

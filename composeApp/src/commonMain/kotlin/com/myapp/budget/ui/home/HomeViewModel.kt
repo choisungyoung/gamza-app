@@ -35,6 +35,7 @@ data class SyncState(
 )
 
 data class HomeUiState(
+    val isLoading: Boolean = true,
     val summary: MonthlySummary = MonthlySummary(),
     val recentTransactions: List<Transaction> = emptyList(),
     val fixedExpenseTransactions: List<Transaction> = emptyList(),
@@ -98,10 +99,19 @@ class HomeViewModel(
     private val _selectedMonth = MutableStateFlow(today.monthNumber)
 
     val uiState: StateFlow<HomeUiState> = combine(
+        sessionManager.activeBook,
         repository.getAll(),
         _selectedYear,
         _selectedMonth
-    ) { transactions, year, month ->
+    ) { book, transactions, year, month ->
+        if (book == null) {
+            return@combine HomeUiState(
+                isLoading = true,
+                currentYear = year,
+                currentMonthNum = month,
+                currentMonth = "${year}년 ${month}월"
+            )
+        }
         val thisMonth = transactions.filter {
             it.date.year == year && it.date.monthNumber == month
         }
@@ -120,6 +130,7 @@ class HomeViewModel(
             .associate { it.key to it.value }
 
         HomeUiState(
+            isLoading = false,
             summary = MonthlySummary(income, expense, income - expense, breakdown),
             recentTransactions = transactions.take(5),
             fixedExpenseTransactions = thisMonth
@@ -133,6 +144,7 @@ class HomeViewModel(
         viewModelScope,
         SharingStarted.WhileSubscribed(5_000),
         HomeUiState(
+            isLoading = true,
             currentYear = today.year,
             currentMonthNum = today.monthNumber,
             currentMonth = "${today.year}년 ${today.monthNumber}월"

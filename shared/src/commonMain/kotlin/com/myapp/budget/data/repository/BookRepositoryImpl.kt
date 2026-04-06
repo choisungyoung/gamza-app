@@ -112,6 +112,16 @@ class BookRepositoryImpl(
             is_selected = if (isFirst) 1L else 0L,
             synced_at = now,
         )
+        if (isFirst) {
+            // 기존 데이터(book_id = '')를 첫 번째 가계부로 마이그레이션
+            // 카테고리는 book_id 필터 없이 전체 조회하므로 backfill 제외
+            queries.backfillBookId(created.id)
+            queries.backfillFixedExpenseBookId(created.id)
+            queries.backfillAssetGroupBookId(created.id)
+            queries.backfillAssetBookId(created.id)
+            // 마이그레이션된 데이터를 Supabase에 push → 이후 pullBookData 시 복원 가능
+            runCatching { pushBookData(created.id) }
+        }
         BudgetDatabaseSeeder.seedAssetsForBook(database, created.id)
         return Book(
             id = created.id,
@@ -359,11 +369,15 @@ class BookRepositoryImpl(
         queries.selectByBookId(bookId).executeAsList().forEach { t ->
             if (t.remote_id.isBlank()) {
                 runCatching {
+                    val feRemoteId = t.fixed_expense_id?.let { feId ->
+                        queries.selectFixedExpenseRemoteId(feId).executeAsOneOrNull()
+                            ?.takeIf { it.isNotBlank() }
+                    }
                     val dto = supabase.postgrest.from("transactions").insert(
                         TransactionRemoteDto(bookId = bookId, title = t.title, amount = t.amount,
                             type = t.type, category = t.category, date = t.date, time = t.time,
                             note = t.note, asset = t.asset, toAsset = t.to_asset, createdBy = t.created_by,
-                            categoryEmoji = t.category_emoji)
+                            categoryEmoji = t.category_emoji, fixedExpenseId = feRemoteId)
                     ) { select() }.decodeSingle<TransactionRemoteDto>()
                     queries.updateTransactionRemoteId(dto.id, t.id)
                 }
@@ -522,15 +536,22 @@ class BookRepositoryImpl(
                     queries.updateFixedExpenseRemoteId(fe.id, localId)
                 }
 
-                // 거래 내역
+                // 거래 내역 (fixed_expense_id: remote UUID → 로컬 ID 매핑)
                 transactions.forEach { t ->
+                    val localFeId = t.fixedExpenseId?.takeIf { it.isNotBlank() }?.let { feRemoteId ->
+                        queries.selectFixedExpenseIdByRemoteId(feRemoteId).executeAsOneOrNull()
+                    }
                     queries.insertWithBookAndCreator(t.title, t.amount, t.type, t.category, t.categoryEmoji, t.date,
-                        t.time, t.note, t.asset, t.toAsset, null, bookId, t.createdBy)
+                        t.time, t.note, t.asset, t.toAsset, localFeId, bookId, t.createdBy)
                     val localId = queries.lastInsertRowId().executeAsOne()
                     queries.updateTransactionRemoteId(t.id, localId)
                 }
             }
         }
+        // Supabase에 자산 데이터가 없는 경우 기본 자산 재시드
+        BudgetDatabaseSeeder.seedAssetsForBook(database, bookId)
+        // 카테고리가 모두 삭제된 경우 기본 카테고리 재시드
+        BudgetDatabaseSeeder.seedIfNeeded(database)
     }
 
     // ── 헬퍼 ────────────────────────────────────────────────────────────────

@@ -18,6 +18,7 @@ data class TransactionRemoteDto(
     @SerialName("to_asset") val toAsset: String = "",
     @SerialName("created_by") val createdBy: String = "",
     @SerialName("category_emoji") val categoryEmoji: String = "",
+    @SerialName("fixed_expense_id") val fixedExpenseId: String? = null,
 )
 
 @Serializable

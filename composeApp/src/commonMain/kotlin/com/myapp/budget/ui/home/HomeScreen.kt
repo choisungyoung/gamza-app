@@ -215,7 +215,11 @@ fun HomeScreen(
 
             // 월별 요약 카드
             item {
-                MonthlySummaryCard(summary = state.summary, month = state.currentMonth)
+                MonthlySummaryCard(
+                    summary = state.summary,
+                    month = state.currentMonth,
+                    isLoading = state.isLoading
+                )
             }
 
             // 카테고리 지출 현황
@@ -252,7 +256,7 @@ fun HomeScreen(
                             color = PotatoDeep
                         )
                     }
-                    if (state.fixedExpenseTransactions.isNotEmpty()) {
+                    if (!state.isLoading && state.fixedExpenseTransactions.isNotEmpty()) {
                         Text(
                             text = state.fixedExpenseTransactions.sumOf { it.amount }.formatAsWon(),
                             style = MaterialTheme.typography.bodyMedium,
@@ -322,8 +326,9 @@ fun HomeScreen(
 }
 
 @Composable
-private fun MonthlySummaryCard(summary: MonthlySummary, month: String) {
+private fun MonthlySummaryCard(summary: MonthlySummary, month: String, isLoading: Boolean = false) {
     val balanceColor = if (summary.balance >= 0) PotatoDeep else Color(0xFFE05050)
+    val placeholderColor = Color(0xFFCCCCCC)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -348,10 +353,10 @@ private fun MonthlySummaryCard(summary: MonthlySummary, month: String) {
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = summary.balance.formatAsWon(),
+                text = if (isLoading) "---" else summary.balance.formatAsWon(),
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.ExtraBold,
-                color = balanceColor,
+                color = if (isLoading) placeholderColor else balanceColor,
                 fontSize = 36.sp
             )
             Spacer(Modifier.height(20.dp))
@@ -372,7 +377,8 @@ private fun MonthlySummaryCard(summary: MonthlySummary, month: String) {
                     label = "수입",
                     amount = summary.totalIncome,
                     iconColor = Color(0xFF43A879),
-                    icon = "▲"
+                    icon = "▲",
+                    isLoading = isLoading
                 )
                 Box(
                     modifier = Modifier
@@ -384,7 +390,8 @@ private fun MonthlySummaryCard(summary: MonthlySummary, month: String) {
                     label = "지출",
                     amount = summary.totalExpense,
                     iconColor = Color(0xFFFF8A65),
-                    icon = "▼"
+                    icon = "▼",
+                    isLoading = isLoading
                 )
             }
         }
@@ -392,13 +399,13 @@ private fun MonthlySummaryCard(summary: MonthlySummary, month: String) {
 }
 
 @Composable
-private fun SummaryItem(label: String, amount: Long, iconColor: Color, icon: String) {
+private fun SummaryItem(label: String, amount: Long, iconColor: Color, icon: String, isLoading: Boolean = false) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text(text = icon, color = iconColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text(text = icon, color = if (isLoading) Color(0xFFCCCCCC) else iconColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             Text(
                 text = label,
                 style = MaterialTheme.typography.bodySmall,
@@ -407,10 +414,10 @@ private fun SummaryItem(label: String, amount: Long, iconColor: Color, icon: Str
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            text = amount.formatAsWon(),
+            text = if (isLoading) "---" else amount.formatAsWon(),
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Bold,
-            color = PotatoDeep
+            color = if (isLoading) Color(0xFFCCCCCC) else PotatoDeep
         )
     }
 }
