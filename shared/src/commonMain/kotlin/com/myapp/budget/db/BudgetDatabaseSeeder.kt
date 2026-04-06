@@ -9,7 +9,18 @@ object BudgetDatabaseSeeder {
     fun seedIfNeeded(db: BudgetDatabase) {
         val q = db.budgetQueries
         seedCategories(q)
-        seedAssets(q)
+    }
+
+    fun seedAssetsForBook(db: BudgetDatabase, bookId: String) {
+        val q = db.budgetQueries
+        if (q.countAssetGroupsByBookId(bookId).executeAsOne() > 0L) return
+
+        assetGroupData.forEachIndexed { i, g ->
+            q.insertAssetGroupWithBook(g.name, g.emoji, g.key, i.toLong(), if (g.isLiability) 1L else 0L, bookId)
+        }
+
+        // 기본 계좌: 우리은행
+        q.insertAssetWithBook("우리은행 월급 계좌", "🏦", "", 0L, "ACCOUNT", 0L, bookId)
     }
 
     // ── 카테고리 ────────────────────────────────────────────────────────────
@@ -101,14 +112,4 @@ object BudgetDatabaseSeeder {
         GroupDef("INVESTMENT", "투자",      "📈"),
     )
 
-    private fun seedAssets(q: BudgetQueries) {
-        if (q.countAssetGroups().executeAsOne() > 0L) return
-
-        assetGroupData.forEachIndexed { i, g ->
-            q.insertAssetGroup(g.name, g.emoji, g.key, i.toLong(), if (g.isLiability) 1L else 0L)
-        }
-
-        // 기본 계좌: 우리은행
-        q.insertAsset("우리은행 월급 계좌", "🏦", "", 0L, "ACCOUNT", 0L)
-    }
 }

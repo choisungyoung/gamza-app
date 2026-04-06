@@ -42,9 +42,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.myapp.budget.platform.GoogleSignInButton
+import com.myapp.budget.ui.components.PotatoCharacter
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
@@ -110,7 +111,7 @@ fun LoginScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("🥔", fontSize = 56.sp)
+            PotatoCharacter(modifier = Modifier.size(120.dp))
             Text(
                 "감자 가계부",
                 style = MaterialTheme.typography.headlineMedium,

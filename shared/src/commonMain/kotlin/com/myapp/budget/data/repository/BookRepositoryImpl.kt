@@ -8,6 +8,7 @@ import com.myapp.budget.data.remote.SupabaseClientProvider
 import com.myapp.budget.data.remote.TransactionRemoteDto
 import com.myapp.budget.data.remote.UserCategoryRemoteDto
 import com.myapp.budget.db.BudgetDatabase
+import com.myapp.budget.db.BudgetDatabaseSeeder
 import com.myapp.budget.domain.model.Book
 import com.myapp.budget.domain.model.BookMember
 import com.myapp.budget.domain.model.MemberRole
@@ -25,6 +26,7 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class BookRepositoryImpl(
     private val database: BudgetDatabase,
@@ -110,6 +112,7 @@ class BookRepositoryImpl(
             is_selected = if (isFirst) 1L else 0L,
             synced_at = now,
         )
+        BudgetDatabaseSeeder.seedAssetsForBook(database, created.id)
         return Book(
             id = created.id,
             name = created.name,
@@ -441,75 +444,93 @@ class BookRepositoryImpl(
     // ── 공유 데이터 Pull (Supabase → 로컬) ──────────────────────────────────
 
     private suspend fun pullBookData(bookId: String) {
-        // 기존 로컬 데이터 초기화 (클린 슬레이트)
-        queries.deleteTransactionsByBookId(bookId)
-        queries.deleteFixedExpensesByBookId(bookId)
-        queries.deleteUserCategoriesByBookId(bookId)
-        queries.deleteParentCategoriesByBookId(bookId)
-        queries.deleteAssetsByBookId(bookId)
-        queries.deleteAssetGroupsByBookId(bookId)
-
-        // 상위 카테고리 (하위 카테고리보다 먼저)
-        val remoteToLocalParent = mutableMapOf<String, Long>()
-        supabase.postgrest.from("parent_categories")
+        // 1단계: Supabase에서 모든 데이터를 먼저 가져옴 (suspend 호출은 트랜잭션 밖에서)
+        val parents = supabase.postgrest.from("parent_categories")
             .select { filter { eq("book_id", bookId) } }
-            .decodeList<ParentCategoryRemoteDto>().forEach { p ->
-                queries.insertParentWithBook(p.name, p.emoji, p.type, p.sortOrder.toLong(), bookId)
-                val localId = queries.lastInsertRowId().executeAsOne()
-                queries.updateParentCategoryRemoteId(p.id, localId)
-                remoteToLocalParent[p.id] = localId
-            }
+            .decodeList<ParentCategoryRemoteDto>()
 
-        // 하위 카테고리
-        supabase.postgrest.from("user_categories")
+        val userCategories = supabase.postgrest.from("user_categories")
             .select { filter { eq("book_id", bookId) } }
-            .decodeList<UserCategoryRemoteDto>().forEach { uc ->
-                val localParentId = remoteToLocalParent[uc.parentRemoteId] ?: return@forEach
-                queries.insertUserCategoryWithBook(uc.name, uc.emoji, localParentId, uc.type, uc.sortOrder.toLong(), bookId)
-                val localId = queries.lastInsertRowId().executeAsOne()
-                queries.updateUserCategoryRemoteId(uc.id, localId)
-            }
+            .decodeList<UserCategoryRemoteDto>()
 
-        // 자산 그룹
-        supabase.postgrest.from("asset_groups")
+        val assetGroups = supabase.postgrest.from("asset_groups")
             .select { filter { eq("book_id", bookId) } }
-            .decodeList<AssetGroupRemoteDto>().forEach { g ->
-                queries.insertAssetGroupWithBook(g.name, g.emoji, g.key, g.sortOrder.toLong(),
-                    if (g.isLiability) 1L else 0L, bookId)
-                val localId = queries.lastInsertRowId().executeAsOne()
-                queries.updateAssetGroupRemoteId(g.id, localId)
-            }
+            .decodeList<AssetGroupRemoteDto>()
 
-        // 자산
-        supabase.postgrest.from("assets")
+        val assets = supabase.postgrest.from("assets")
             .select { filter { eq("book_id", bookId) } }
-            .decodeList<AssetRemoteDto>().forEach { a ->
-                queries.insertAssetWithBook(a.name, a.emoji, a.owner, a.initialBalance,
-                    a.groupKey, a.sortOrder.toLong(), bookId)
-                val localId = queries.lastInsertRowId().executeAsOne()
-                queries.updateAssetRemoteId(a.id, localId)
-            }
+            .decodeList<AssetRemoteDto>()
 
-        // 고정지출
-        supabase.postgrest.from("fixed_expenses")
+        val fixedExpenses = supabase.postgrest.from("fixed_expenses")
             .select { filter { eq("book_id", bookId) } }
-            .decodeList<FixedExpenseRemoteDto>().forEach { fe ->
-                queries.insertFixedExpenseWithBookFull(fe.title, fe.amount, fe.category, fe.asset,
-                    fe.dayOfMonth.toLong(), fe.startYear.toLong(), fe.startMonth.toLong(),
-                    fe.note, if (fe.isActive) 1L else 0L, bookId)
-                val localId = queries.lastInsertRowId().executeAsOne()
-                queries.updateFixedExpenseRemoteId(fe.id, localId)
-            }
+            .decodeList<FixedExpenseRemoteDto>()
 
-        // 트랜잭션
-        supabase.postgrest.from("transactions")
+        val transactions = supabase.postgrest.from("transactions")
             .select { filter { eq("book_id", bookId) } }
-            .decodeList<TransactionRemoteDto>().forEach { t ->
-                queries.insertWithBookAndCreator(t.title, t.amount, t.type, t.category, t.categoryEmoji, t.date,
-                    t.time, t.note, t.asset, t.toAsset, null, bookId, t.createdBy)
-                val localId = queries.lastInsertRowId().executeAsOne()
-                queries.updateTransactionRemoteId(t.id, localId)
+            .decodeList<TransactionRemoteDto>()
+
+        // 2단계: 단일 DB 트랜잭션으로 삭제 + 삽입을 원자적으로 처리
+        // → SQLDelight Flow가 커밋 시점에 딱 1번만 방출되어 화면 깜빡임 방지
+        withContext(Dispatchers.Default) {
+            database.transaction {
+                queries.deleteTransactionsByBookId(bookId)
+                queries.deleteFixedExpensesByBookId(bookId)
+                queries.deleteUserCategoriesByBookId(bookId)
+                queries.deleteParentCategoriesByBookId(bookId)
+                queries.deleteAssetsByBookId(bookId)
+                queries.deleteAssetGroupsByBookId(bookId)
+
+                // 상위 카테고리
+                val remoteToLocalParent = mutableMapOf<String, Long>()
+                parents.forEach { p ->
+                    queries.insertParentWithBook(p.name, p.emoji, p.type, p.sortOrder.toLong(), bookId)
+                    val localId = queries.lastInsertRowId().executeAsOne()
+                    queries.updateParentCategoryRemoteId(p.id, localId)
+                    remoteToLocalParent[p.id] = localId
+                }
+
+                // 하위 카테고리
+                userCategories.forEach { uc ->
+                    val localParentId = remoteToLocalParent[uc.parentRemoteId] ?: return@forEach
+                    queries.insertUserCategoryWithBook(uc.name, uc.emoji, localParentId, uc.type, uc.sortOrder.toLong(), bookId)
+                    val localId = queries.lastInsertRowId().executeAsOne()
+                    queries.updateUserCategoryRemoteId(uc.id, localId)
+                }
+
+                // 자산 그룹
+                assetGroups.forEach { g ->
+                    queries.insertAssetGroupWithBook(g.name, g.emoji, g.key, g.sortOrder.toLong(),
+                        if (g.isLiability) 1L else 0L, bookId)
+                    val localId = queries.lastInsertRowId().executeAsOne()
+                    queries.updateAssetGroupRemoteId(g.id, localId)
+                }
+
+                // 자산
+                assets.forEach { a ->
+                    queries.insertAssetWithBook(a.name, a.emoji, a.owner, a.initialBalance,
+                        a.groupKey, a.sortOrder.toLong(), bookId)
+                    val localId = queries.lastInsertRowId().executeAsOne()
+                    queries.updateAssetRemoteId(a.id, localId)
+                }
+
+                // 고정지출
+                fixedExpenses.forEach { fe ->
+                    queries.insertFixedExpenseWithBookFull(fe.title, fe.amount, fe.category, fe.asset,
+                        fe.dayOfMonth.toLong(), fe.startYear.toLong(), fe.startMonth.toLong(),
+                        fe.note, if (fe.isActive) 1L else 0L, bookId)
+                    val localId = queries.lastInsertRowId().executeAsOne()
+                    queries.updateFixedExpenseRemoteId(fe.id, localId)
+                }
+
+                // 거래 내역
+                transactions.forEach { t ->
+                    queries.insertWithBookAndCreator(t.title, t.amount, t.type, t.category, t.categoryEmoji, t.date,
+                        t.time, t.note, t.asset, t.toAsset, null, bookId, t.createdBy)
+                    val localId = queries.lastInsertRowId().executeAsOne()
+                    queries.updateTransactionRemoteId(t.id, localId)
+                }
             }
+        }
     }
 
     // ── 헬퍼 ────────────────────────────────────────────────────────────────

@@ -43,7 +43,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myapp.budget.domain.model.MonthlySummary
 import com.myapp.budget.ui.components.PotatoCharacter
+import com.myapp.budget.ui.components.ToastMessage
 import com.myapp.budget.ui.components.TransactionItem
 import com.myapp.budget.ui.theme.ExpenseColor
 import com.myapp.budget.ui.theme.PotatoBrown
@@ -76,6 +79,7 @@ fun HomeScreen(
     val syncState by viewModel.syncState.collectAsState()
     val isLoggedIn = currentUser != null
     val snackbarHostState = remember { SnackbarHostState() }
+    var toastMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.bookSwitchedEvent.collect { book ->
@@ -86,7 +90,7 @@ fun HomeScreen(
     LaunchedEffect(syncState.syncSuccess, syncState.error) {
         when {
             syncState.syncSuccess -> {
-                snackbarHostState.showSnackbar("새로고침 완료")
+                toastMessage = "새로고침 완료"
                 viewModel.clearSyncState()
             }
             syncState.error != null -> {
@@ -96,6 +100,7 @@ fun HomeScreen(
         }
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         contentWindowInsets = WindowInsets(0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -311,6 +316,8 @@ fun HomeScreen(
                 }
             }
         }
+    }
+    ToastMessage(message = toastMessage, onDismiss = { toastMessage = null })
     }
 }
 

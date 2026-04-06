@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myapp.budget.domain.model.Book
 import com.myapp.budget.domain.model.LocalUser
+import com.myapp.budget.platform.OnBackPressed
 import com.myapp.budget.ui.util.toComposeColor
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -65,6 +66,8 @@ fun BookListScreen(
     onNavigateToSettings: (String) -> Unit,
     onBookSelected: () -> Unit,
 ) {
+    OnBackPressed(enabled = true, onBack = onBack)
+
     val viewModel: BookViewModel = koinViewModel()
     val books by viewModel.books.collectAsState()
     val selectedBook by viewModel.selectedBook.collectAsState()

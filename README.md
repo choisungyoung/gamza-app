@@ -1,7 +1,7 @@
 # 🥔 감자 (Gamza) — 가계부 앱
 
 Kotlin Multiplatform + Compose Multiplatform으로 만든 Android/iOS 가계부 앱.
-단일 Kotlin 코드베이스로 Android와 iOS를 모두 지원합니다.
+단일 Kotlin 코드베이스로 Android와 iOS를 모두 지원하며, Supabase 기반 공유 가계부와 실시간 동기화를 지원합니다.
 
 ---
 
@@ -15,20 +15,26 @@ Kotlin Multiplatform + Compose Multiplatform으로 만든 Android/iOS 가계부 
 | **커스텀 카테고리** | 기본 카테고리 외 사용자 정의 소분류 생성 |
 | **통계** | 월별 수입/지출 합계, 카테고리별 비율 차트 |
 | **검색 & 필터** | 날짜·카테고리·유형·자산 기준 필터링 |
+| **공유 가계부** | 초대 코드로 여러 기기에서 가계부 공유·동기화 |
+| **인증** | 이메일/비밀번호 및 Google 로그인 (Supabase Auth) |
+| **데이터 내보내기** | XLSX 형식으로 거래 내역 내보내기/가져오기 |
 
 ---
 
 ## 스크린 구성
 
 ```
-홈 (Home)              → 월 요약, 상위 5개 지출 카테고리, 최근 거래
-거래 내역 (Transactions) → 전체 목록, 필터링
-통계 (Statistics)       → 차트 및 분석
-자산 (Assets)           → 계좌 잔액, 그룹 관리
-거래 추가/수정           → 날짜·시간·카테고리·자산 선택
-카테고리 관리 (Drawer)   → 소분류 생성/편집/순서 변경
-고정 지출 (Drawer)       → 정기 지출 설정
-검색                    → 키워드·필터 검색
+로그인 / 회원가입          → Supabase 이메일 + Google 로그인
+홈 (Home)                  → 월 요약, 상위 5개 지출 카테고리, 최근 거래
+거래 내역 (Transactions)   → 전체 목록, 필터링
+통계 (Statistics)          → 차트 및 분석, 고정지출 목록
+자산 (Assets)              → 계좌 잔액, 그룹 관리
+거래 추가/수정             → 날짜·시간·카테고리·자산 선택
+검색                       → 키워드·필터 검색
+카테고리 관리 (Drawer)     → 소분류 생성/편집/순서 변경
+고정 지출 (Drawer)         → 정기 지출 설정
+가계부 관리 (Drawer)       → 가계부 생성, 초대 코드, 멤버 관리
+데이터 관리 (Drawer)       → XLSX 내보내기/가져오기
 ```
 
 ---
@@ -41,9 +47,10 @@ Kotlin Multiplatform + Compose Multiplatform으로 만든 Android/iOS 가계부 
 | UI | Compose Multiplatform | 1.7.3 |
 | DI | Koin | 4.0.0 |
 | Database | SQLDelight | 2.0.2 |
+| Backend | Supabase (Auth, Postgrest, Realtime) | 3.1.4 |
+| HTTP | Ktor | 3.1.3 |
 | Date/Time | kotlinx-datetime | 0.6.1 |
 | Serialization | kotlinx-serialization | 1.7.3 |
-| HTTP | Ktor | 3.0.3 |
 | Android SDK | min 26 / target 35 | — |
 | iOS | 15+ (x64, Arm64, SimulatorArm64) | — |
 
@@ -58,7 +65,7 @@ shared/domain (Repository Interface + Model)
     ↓
 shared/data (Repository 구현체)
     ↓
-SQLDelight (Database)
+SQLDelight (로컬 캐시) ←→ Supabase (원격 동기화)
 ```
 
 ### 모듈 구조
@@ -69,24 +76,43 @@ gamza-app/
 │   └── src/
 │       ├── commonMain/          # 공통 Composable + ViewModel
 │       │   └── kotlin/com/myapp/budget/
-│       │       ├── App.kt       # 내비게이션 정의
+│       │       ├── App.kt       # 내비게이션 (sealed class Screen)
 │       │       ├── ui/          # 화면별 Screen + ViewModel
+│       │       │   ├── auth/    # 로그인, 회원가입
+│       │       │   ├── home/    # 홈
+│       │       │   ├── transactions/ # 거래 내역
+│       │       │   ├── statistics/   # 통계
+│       │       │   ├── asset/        # 자산 관리
+│       │       │   ├── addedit/      # 거래 추가/수정
+│       │       │   ├── search/       # 검색
+│       │       │   ├── category/     # 카테고리 관리
+│       │       │   ├── fixedexpense/ # 고정 지출
+│       │       │   ├── book/         # 가계부 관리
+│       │       │   ├── datamanagement/ # 데이터 내보내기
+│       │       │   ├── splash/       # 스플래시
+│       │       │   └── components/   # PotatoCharacter, TransactionItem 등
 │       │       ├── di/          # AppModule (ViewModel DI)
+│       │       ├── platform/    # expect/actual (FileOps, GoogleAuth, BackPress)
 │       │       └── util/        # FormatUtils (₩ 포맷)
 │       ├── androidMain/         # MainActivity, BudgetApp
-│       └── iosMain/             # MainViewController
+│       └── iosMain/             # MainViewController, initKoin()
 │
 ├── shared/                      # 비즈니스 로직 레이어
 │   └── src/
 │       ├── commonMain/
 │       │   ├── kotlin/com/myapp/budget/
-│       │   │   ├── domain/      # Model, Repository 인터페이스
-│       │   │   ├── data/        # Repository 구현체
-│       │   │   ├── db/          # DatabaseDriverFactory (expect)
+│       │   │   ├── domain/
+│       │   │   │   ├── model/   # 도메인 모델
+│       │   │   │   ├── repository/ # Repository 인터페이스
+│       │   │   │   └── SessionManager.kt  # 활성 사용자·가계부 상태
+│       │   │   ├── data/
+│       │   │   │   ├── repository/ # Repository 구현체
+│       │   │   │   └── remote/     # Supabase DTO, SupabaseClientProvider, RealtimeManager
+│       │   │   ├── db/          # DatabaseDriverFactory (expect) + BudgetDatabaseSeeder
 │       │   │   └── di/          # SharedModule
 │       │   └── sqldelight/      # Budget.sq (스키마 + 쿼리)
-│       ├── androidMain/         # AndroidSqliteDriver
-│       └── iosMain/             # NativeSqliteDriver
+│       ├── androidMain/         # AndroidSqliteDriver, androidModule
+│       └── iosMain/             # NativeSqliteDriver, iosModule
 │
 └── gradle/libs.versions.toml    # 중앙화된 버전 관리
 ```
@@ -95,7 +121,8 @@ gamza-app/
 
 - **DI**: Koin. 플랫폼별 `androidModule` / `iosModule` → 공통 `sharedModule` → UI `appModule` 순서로 초기화
 - **DB**: SQLDelight 2.x — 컴파일 타임 타입 안전 SQL. `.sq` 파일로 스키마 및 쿼리 정의
-- **플랫폼 분기**: `expect/actual`로 `DatabaseDriverFactory` 구현
+- **동기화**: 로컬 SQLite를 캐시로 사용하고 Supabase를 원격 저장소로 활용. 가계부 전환 시 `pullBookData`로 전체 동기화
+- **플랫폼 분기**: `expect/actual`로 `DatabaseDriverFactory`, `FileOps`, `GoogleAuth`, `BackHandler` 구현
 - **상태 관리**: `ViewModel` + `StateFlow` + `SharingStarted.WhileSubscribed(5_000)`
 - **날짜**: `kotlinx-datetime`의 `LocalDate` / `LocalTime`. DB 저장 시 ISO-8601 문자열
 
@@ -165,13 +192,17 @@ struct ComposeView: UIViewControllerRepresentable {
 }
 ```
 
-앱 진입점(`@main`)에서 Koin 초기화:
+앱 진입점(`@main`)에서 Koin + Supabase 초기화 (Supabase URL·Key·Google Client ID는 `initKoin()` 인자로 전달):
 
 ```swift
 @main
 struct iOSApp: App {
     init() {
-        IosModuleKt.initKoin()  // MainViewController() 전에 반드시 호출
+        MainViewControllerKt.initKoin(
+            supabaseUrl: "...",
+            supabaseAnonKey: "...",
+            googleWebClientId: "..."
+        )
     }
     var body: some Scene {
         WindowGroup { ContentView() }
@@ -183,16 +214,22 @@ struct iOSApp: App {
 
 ## 데이터베이스 스키마
 
-SQLDelight로 정의된 6개 테이블:
+SQLDelight로 정의된 10개 테이블:
 
 | 테이블 | 용도 |
 |--------|------|
 | `TransactionEntity` | 수입/지출/이체 거래 |
 | `FixedExpenseEntity` | 월 정기 지출 |
 | `AssetEntity` | 계좌·현금·카드 등 자산 |
-| `AssetGroupEntity` | 자산 그룹 (예금, 카드 등) |
+| `AssetGroupEntity` | 자산 그룹 (계좌/현금, 카드 등) |
 | `UserCategoryEntity` | 사용자 정의 소분류 |
-| `ParentCategoryEntity` | 부모 카테고리 커스터마이징 |
+| `ParentCategoryEntity` | 상위 카테고리 |
+| `BookEntity` | 가계부 (공유·개인) |
+| `BookMemberEntity` | 가계부 멤버 및 역할 |
+| `LocalUserEntity` | 로그인 사용자 로컬 캐시 |
+| `SyncQueueEntity` | 원격 동기화 큐 |
+
+모든 데이터 테이블에는 `book_id`가 있어 가계부 단위로 데이터가 격리됩니다.
 
 ---
 
@@ -200,6 +237,6 @@ SQLDelight로 정의된 6개 테이블:
 
 기본 제공 18개 카테고리:
 
-**지출 (8)**: 식비, 교통, 주거, 쇼핑, 건강, 문화, 교육, 기타지출
+**지출 (8)**: 식비, 교통, 생활, 쇼핑, 의료, 문화, 교육, 기타지출
 **수입 (5)**: 급여, 부업, 투자, 용돈, 기타수입
-**이체 (5)**: 계좌이체, 저축, 현금인출, 투자이체, 대출상환
+**이체 (5)**: 내계좌이체, 저축, 현금, 투자, 대출
