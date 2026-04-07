@@ -81,6 +81,11 @@ class HomeViewModel(
             fixedExpenseRepository.autoRegisterPending(today)
         }
 
+        // 가계부 전환 시 새 가계부의 고정지출 자동 등록 재실행
+        sessionManager.bookSwitched.onEach {
+            fixedExpenseRepository.autoRegisterPending(today)
+        }.launchIn(viewModelScope)
+
         // 활성 가계부가 바뀔 때마다 Realtime 채널 갱신
         sessionManager.activeBook.onEach { book ->
             if (book != null) realtimeManager.startWatching(book.id)

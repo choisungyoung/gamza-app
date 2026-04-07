@@ -21,6 +21,7 @@ data class BookUiState(
     val error: String? = null,
     val members: List<BookMember> = emptyList(),
     val inviteCode: String? = null,
+    val createdBook: Book? = null,
     val joinedBook: Book? = null,
     val leftBook: Boolean = false,
 )
@@ -61,7 +62,8 @@ class BookViewModel(
             runCatching { bookRepository.createBook(name, colorHex, iconEmoji) }
                 .onSuccess { book ->
                     sessionManager.setActiveBook(book)
-                    _uiState.value = BookUiState()
+                    sessionManager.notifyBookSwitched(book)
+                    _uiState.value = BookUiState(createdBook = book)
                 }
                 .onFailure { _uiState.value = BookUiState(error = it.message ?: "가계부 생성에 실패했습니다.") }
         }
@@ -119,7 +121,13 @@ class BookViewModel(
         viewModelScope.launch {
             _uiState.value = BookUiState(isLoading = true)
             runCatching { bookRepository.joinByInviteCode(code.trim().uppercase()) }
-                .onSuccess { book -> _uiState.value = BookUiState(joinedBook = book) }
+                .onSuccess { book ->
+                    // 공유 가계부 데이터를 로컬에 동기화한 후 자동 전환
+                    runCatching { bookRepository.syncBookData(book.id) }
+                    sessionManager.setActiveBook(book)
+                    sessionManager.notifyBookSwitched(book)
+                    _uiState.value = BookUiState(joinedBook = book)
+                }
                 .onFailure { _uiState.value = BookUiState(error = it.message ?: "참여에 실패했습니다. 코드를 확인해주세요.") }
         }
     }

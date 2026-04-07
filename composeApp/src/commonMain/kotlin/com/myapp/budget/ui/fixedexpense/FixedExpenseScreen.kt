@@ -64,11 +64,25 @@ fun FixedExpenseScreen(
     OnBackPressed(enabled = true) { onBack() }
 
     val fixedExpenses by viewModel.fixedExpenses.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
 
     // 삭제 다이얼로그 상태
     var deletingItem by remember { mutableStateOf<FixedExpense?>(null) }
     var linkedCount by remember { mutableStateOf(0L) }
     var keepTransactions by remember { mutableStateOf(true) }
+
+    // 에러 다이얼로그
+    uiState.error?.let { errorMsg ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearError() },
+            title = { Text("삭제 실패", fontWeight = FontWeight.Bold) },
+            text = { Text(errorMsg, style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearError() }) { Text("확인") }
+            },
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
 
     deletingItem?.let { item ->
         AlertDialog(
@@ -139,9 +153,11 @@ fun FixedExpenseScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.delete(item.id, keepTransactions) {}
-                        deletingItem = null
+                        viewModel.delete(item.id, keepTransactions) {
+                            deletingItem = null
+                        }
                     },
+                    enabled = !uiState.isLoading,
                     colors = ButtonDefaults.textButtonColors(contentColor = ExpenseColor)
                 ) { Text("삭제", fontWeight = FontWeight.Bold) }
             },

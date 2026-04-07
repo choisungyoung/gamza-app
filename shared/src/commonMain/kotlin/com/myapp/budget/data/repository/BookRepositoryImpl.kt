@@ -109,9 +109,12 @@ class BookRepositoryImpl(
             color_hex = created.colorHex,
             icon_emoji = created.iconEmoji,
             owner_id = created.ownerId,
-            is_selected = if (isFirst) 1L else 0L,
+            is_selected = 0L,
             synced_at = now,
         )
+        // 새 가계부를 선택 상태로 설정 → getSelectedBook() Flow가 새 가계부를 emit
+        // → App.kt LaunchedEffect에서 setActiveBook(new) 호출됨
+        queries.setSelectedBook(created.id)
         if (isFirst) {
             // 기존 데이터(book_id = '')를 첫 번째 가계부로 마이그레이션
             // 카테고리는 book_id 필터 없이 전체 조회하므로 backfill 제외
@@ -211,8 +214,7 @@ class BookRepositoryImpl(
             is_selected = if (isFirst) 1L else 0L,
             synced_at = Clock.System.now().toString(),
         )
-        // 참여한 가계부의 데이터를 로컬로 다운로드
-        pullBookData(bookDto.id)
+        // 데이터 동기화는 ViewModel의 syncBookData에서 처리 (중복 pull 방지)
         return Book(
             id = bookDto.id, name = bookDto.name, colorHex = bookDto.colorHex,
             iconEmoji = bookDto.iconEmoji, ownerId = bookDto.ownerId, isSelected = isFirst,
@@ -365,7 +367,22 @@ class BookRepositoryImpl(
     // ── 공유 데이터 Push (로컬 → Supabase) ──────────────────────────────────
 
     private suspend fun pushBookData(bookId: String) {
-        // 트랜잭션
+        // 고정지출 (거래 내역보다 먼저 push해야 remote_id가 확보됨)
+        queries.selectAllFixedExpensesIncludingInactiveByBookId(bookId).executeAsList().forEach { fe ->
+            if (fe.remote_id.isBlank()) {
+                runCatching {
+                    val dto = supabase.postgrest.from("fixed_expenses").insert(
+                        FixedExpenseRemoteDto(bookId = bookId, title = fe.title, amount = fe.amount,
+                            category = fe.category, asset = fe.asset, dayOfMonth = fe.day_of_month.toInt(),
+                            startYear = fe.start_year.toInt(), startMonth = fe.start_month.toInt(),
+                            note = fe.note, isActive = fe.is_active != 0L)
+                    ) { select() }.decodeSingle<FixedExpenseRemoteDto>()
+                    queries.updateFixedExpenseRemoteId(dto.id, fe.id)
+                }
+            }
+        }
+
+        // 거래 내역 (고정지출 push 후 remote_id 참조 가능)
         queries.selectByBookId(bookId).executeAsList().forEach { t ->
             if (t.remote_id.isBlank()) {
                 runCatching {
@@ -380,21 +397,6 @@ class BookRepositoryImpl(
                             categoryEmoji = t.category_emoji, fixedExpenseId = feRemoteId)
                     ) { select() }.decodeSingle<TransactionRemoteDto>()
                     queries.updateTransactionRemoteId(dto.id, t.id)
-                }
-            }
-        }
-
-        // 고정지출
-        queries.selectAllFixedExpensesIncludingInactiveByBookId(bookId).executeAsList().forEach { fe ->
-            if (fe.remote_id.isBlank()) {
-                runCatching {
-                    val dto = supabase.postgrest.from("fixed_expenses").insert(
-                        FixedExpenseRemoteDto(bookId = bookId, title = fe.title, amount = fe.amount,
-                            category = fe.category, asset = fe.asset, dayOfMonth = fe.day_of_month.toInt(),
-                            startYear = fe.start_year.toInt(), startMonth = fe.start_month.toInt(),
-                            note = fe.note, isActive = fe.is_active != 0L)
-                    ) { select() }.decodeSingle<FixedExpenseRemoteDto>()
-                    queries.updateFixedExpenseRemoteId(dto.id, fe.id)
                 }
             }
         }
@@ -483,12 +485,21 @@ class BookRepositoryImpl(
             .select { filter { eq("book_id", bookId) } }
             .decodeList<TransactionRemoteDto>()
 
+        // Supabase에서 빈 목록이 반환됐을 때 로컬 데이터를 삭제하면 안 되는 경우 감지
+        // (RLS 차단 or 네트워크 오류로 빈 목록 반환 시 로컬 데이터 보호)
+        val localFixedExpenseCount = queries.selectAllFixedExpensesIncludingInactiveByBookId(bookId)
+            .executeAsList().size
+        val skipFixedExpenseSync = fixedExpenses.isEmpty() && localFixedExpenseCount > 0
+
+        val localTransactionCount = queries.selectByBookId(bookId).executeAsList().size
+        val skipTransactionSync = transactions.isEmpty() && localTransactionCount > 0
+
         // 2단계: 단일 DB 트랜잭션으로 삭제 + 삽입을 원자적으로 처리
         // → SQLDelight Flow가 커밋 시점에 딱 1번만 방출되어 화면 깜빡임 방지
         withContext(Dispatchers.Default) {
             database.transaction {
-                queries.deleteTransactionsByBookId(bookId)
-                queries.deleteFixedExpensesByBookId(bookId)
+                if (!skipTransactionSync) queries.deleteTransactionsByBookId(bookId)
+                if (!skipFixedExpenseSync) queries.deleteFixedExpensesByBookId(bookId)
                 queries.deleteUserCategoriesByBookId(bookId)
                 queries.deleteParentCategoriesByBookId(bookId)
                 queries.deleteAssetsByBookId(bookId)
@@ -527,24 +538,28 @@ class BookRepositoryImpl(
                     queries.updateAssetRemoteId(a.id, localId)
                 }
 
-                // 고정지출
-                fixedExpenses.forEach { fe ->
-                    queries.insertFixedExpenseWithBookFull(fe.title, fe.amount, fe.category, fe.asset,
-                        fe.dayOfMonth.toLong(), fe.startYear.toLong(), fe.startMonth.toLong(),
-                        fe.note, if (fe.isActive) 1L else 0L, bookId)
-                    val localId = queries.lastInsertRowId().executeAsOne()
-                    queries.updateFixedExpenseRemoteId(fe.id, localId)
+                // 고정지출 (Supabase 빈 목록이면 로컬 유지)
+                if (!skipFixedExpenseSync) {
+                    fixedExpenses.forEach { fe ->
+                        queries.insertFixedExpenseWithBookFull(fe.title, fe.amount, fe.category, fe.asset,
+                            fe.dayOfMonth.toLong(), fe.startYear.toLong(), fe.startMonth.toLong(),
+                            fe.note, if (fe.isActive) 1L else 0L, bookId)
+                        val localId = queries.lastInsertRowId().executeAsOne()
+                        queries.updateFixedExpenseRemoteId(fe.id, localId)
+                    }
                 }
 
-                // 거래 내역 (fixed_expense_id: remote UUID → 로컬 ID 매핑)
-                transactions.forEach { t ->
-                    val localFeId = t.fixedExpenseId?.takeIf { it.isNotBlank() }?.let { feRemoteId ->
-                        queries.selectFixedExpenseIdByRemoteId(feRemoteId).executeAsOneOrNull()
+                // 거래 내역 (Supabase 빈 목록이면 로컬 유지)
+                if (!skipTransactionSync) {
+                    transactions.forEach { t ->
+                        val localFeId = t.fixedExpenseId?.takeIf { it.isNotBlank() }?.let { feRemoteId ->
+                            queries.selectFixedExpenseIdByRemoteId(feRemoteId).executeAsOneOrNull()
+                        }
+                        queries.insertWithBookAndCreator(t.title, t.amount, t.type, t.category, t.categoryEmoji, t.date,
+                            t.time, t.note, t.asset, t.toAsset, localFeId, bookId, t.createdBy)
+                        val localId = queries.lastInsertRowId().executeAsOne()
+                        queries.updateTransactionRemoteId(t.id, localId)
                     }
-                    queries.insertWithBookAndCreator(t.title, t.amount, t.type, t.category, t.categoryEmoji, t.date,
-                        t.time, t.note, t.asset, t.toAsset, localFeId, bookId, t.createdBy)
-                    val localId = queries.lastInsertRowId().executeAsOne()
-                    queries.updateTransactionRemoteId(t.id, localId)
                 }
             }
         }

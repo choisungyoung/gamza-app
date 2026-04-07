@@ -16,9 +16,12 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.datetime.Clock
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
 import kotlinx.datetime.minus
+import kotlinx.datetime.todayIn
 
 class FixedExpenseRepositoryImpl(
     private val database: BudgetDatabase,
@@ -76,48 +79,51 @@ class FixedExpenseRepositoryImpl(
         )
         val localId = queries.lastFixedExpenseRowId().executeAsOne()
         queries.updateFixedExpenseRemoteId(dto.id, localId)
+
+        // remote_id가 설정된 상태에서 즉시 자동 등록 → fixed_expense_id가 올바르게 기록됨
+        val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
+        autoRegisterPending(today)
+
         return localId
     }
 
     override suspend fun update(id: Long, title: String, amount: Long, dayOfMonth: Int, note: String) {
+        // Supabase 먼저 → 성공 후 로컬 반영 (순서 역전 시 pull에서 덮어씌워짐)
+        val remoteId = queries.selectFixedExpenseRemoteId(id).executeAsOneOrNull()
+        if (!remoteId.isNullOrBlank()) {
+            supabase.postgrest.from("fixed_expenses").update({
+                set("title", title); set("amount", amount)
+                set("day_of_month", dayOfMonth); set("note", note)
+            }) { filter { eq("id", remoteId) } }
+        }
         queries.updateFixedExpense(
             title = title, amount = amount,
             day_of_month = dayOfMonth.toLong(), note = note, id = id
         )
-        val remoteId = queries.selectFixedExpenseRemoteId(id).executeAsOneOrNull()
-        if (!remoteId.isNullOrBlank()) {
-            runCatching {
-                supabase.postgrest.from("fixed_expenses").update({
-                    set("title", title); set("amount", amount)
-                    set("day_of_month", dayOfMonth); set("note", note)
-                }) { filter { eq("id", remoteId) } }
-            }
-        }
     }
 
     override suspend fun delete(id: Long) {
+        // Supabase 먼저 삭제 → 실패 시 로컬도 삭제하지 않음
+        // (로컬 먼저 삭제하면 pull 시 Supabase 데이터로 복원되는 버그 발생)
         val remoteId = queries.selectFixedExpenseRemoteId(id).executeAsOneOrNull()
-        queries.deleteFixedExpense(id)
         if (!remoteId.isNullOrBlank()) {
-            runCatching {
-                supabase.postgrest.from("fixed_expenses").delete { filter { eq("id", remoteId) } }
-            }
+            supabase.postgrest.from("fixed_expenses").delete { filter { eq("id", remoteId) } }
         }
+        queries.deleteFixedExpense(id)
     }
 
     override suspend fun countLinkedTransactions(id: Long): Long =
         queries.countByFixedExpenseId(id).executeAsOne()
 
     override suspend fun deactivate(id: Long) {
-        queries.deactivateFixedExpense(id)
+        // Supabase 먼저 → 성공 후 로컬 반영
         val remoteId = queries.selectFixedExpenseRemoteId(id).executeAsOneOrNull()
         if (!remoteId.isNullOrBlank()) {
-            runCatching {
-                supabase.postgrest.from("fixed_expenses").update({ set("is_active", false) }) {
-                    filter { eq("id", remoteId) }
-                }
+            supabase.postgrest.from("fixed_expenses").update({ set("is_active", false) }) {
+                filter { eq("id", remoteId) }
             }
         }
+        queries.deactivateFixedExpense(id)
     }
 
     override suspend fun detachFromDate(id: Long, fromDateStr: String) {

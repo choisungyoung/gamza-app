@@ -34,6 +34,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,17 +65,17 @@ fun CreateBookScreen(
 ) {
     val viewModel: BookViewModel = koinViewModel()
     val uiState by viewModel.uiState.collectAsState()
-    val books by viewModel.books.collectAsState()
     val clipboardManager = LocalClipboardManager.current
 
     var name by remember { mutableStateOf("") }
     var selectedColor by remember { mutableStateOf(presetColors[0]) }
     var selectedIcon by remember { mutableStateOf(presetIcons[0]) }
 
-    val previousCount = remember { mutableStateOf(books.size) }
-    if (books.size > previousCount.value) {
-        previousCount.value = books.size
-        onCreated()
+    LaunchedEffect(uiState.createdBook) {
+        if (uiState.createdBook != null) {
+            viewModel.clearState()
+            onCreated()
+        }
     }
 
     // 에러 팝업
