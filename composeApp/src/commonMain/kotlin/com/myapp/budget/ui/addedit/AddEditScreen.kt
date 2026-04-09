@@ -3,6 +3,7 @@ package com.myapp.budget.ui.addedit
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.selection.SelectionContainer
 import com.myapp.budget.platform.OnBackPressed
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -100,6 +101,7 @@ fun AddEditScreen(
     var showTimePicker by remember { mutableStateOf(false) }
     var showCategoryPicker by remember { mutableStateOf(false) }
     var showAssetPicker by remember { mutableStateOf(false) }
+    var errorDialogMessage by remember { mutableStateOf<String?>(null) }
 
     var titleFieldValue by remember { mutableStateOf(TextFieldValue("")) }
     var noteFieldValue by remember { mutableStateOf(TextFieldValue("")) }
@@ -115,7 +117,7 @@ fun AddEditScreen(
     }
     LaunchedEffect(viewModel.errorMessage) {
         viewModel.errorMessage?.let {
-            snackbarHostState.showSnackbar(it)
+            errorDialogMessage = it
             viewModel.errorMessage = null
         }
     }
@@ -254,6 +256,23 @@ fun AddEditScreen(
             },
             dismissButton = {
                 TextButton(onClick = { viewModel.skipAutoRegister() }) { Text("건너뛰기") }
+            },
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
+    // ── Error Dialog ──
+    if (errorDialogMessage != null) {
+        AlertDialog(
+            onDismissRequest = { errorDialogMessage = null },
+            title = { Text("오류", fontWeight = FontWeight.Bold) },
+            text = {
+                SelectionContainer {
+                    Text(errorDialogMessage!!)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { errorDialogMessage = null }) { Text("확인") }
             },
             shape = RoundedCornerShape(20.dp)
         )

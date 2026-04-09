@@ -84,10 +84,6 @@ class FixedExpenseRepositoryImpl(
         val localId = queries.lastFixedExpenseRowId().executeAsOne()
         queries.updateFixedExpenseRemoteId(dto.id, localId)
 
-        // remote_id가 설정된 상태에서 즉시 자동 등록 → fixed_expense_id가 올바르게 기록됨
-        val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
-        autoRegisterPending(today)
-
         return localId
     }
 
@@ -106,12 +102,22 @@ class FixedExpenseRepositoryImpl(
         )
     }
 
-    override suspend fun delete(id: Long) {
+    override suspend fun delete(id: Long, remoteId: String) {
         // Supabase 먼저 삭제 → 실패 시 로컬도 삭제하지 않음
         // (로컬 먼저 삭제하면 pull 시 Supabase 데이터로 복원되는 버그 발생)
-        val remoteId = queries.selectFixedExpenseRemoteId(id).executeAsOneOrNull()
-        if (!remoteId.isNullOrBlank()) {
-            supabase.postgrest.from("fixed_expenses").delete { filter { eq("id", remoteId) } }
+        // remoteId는 호출자로부터 직접 전달받아 pullBookData의 ID 재할당 경쟁 조건 방지
+        val effectiveRemoteId = remoteId.ifBlank {
+            queries.selectFixedExpenseRemoteId(id).executeAsOneOrNull()
+        }
+        if (!effectiveRemoteId.isNullOrBlank()) {
+            supabase.postgrest.from("fixed_expenses").delete { filter { eq("id", effectiveRemoteId) } }
+            // PostgREST는 RLS가 막아도 HTTP 200을 반환해 예외가 발생하지 않음.
+            // SELECT로 실제 삭제 여부를 확인해 로컬 삭제를 막음.
+            val stillExists = supabase.postgrest.from("fixed_expenses")
+                .select { filter { eq("id", effectiveRemoteId) } }
+                .decodeList<FixedExpenseRemoteDto>()
+                .isNotEmpty()
+            if (stillExists) error("고정지출을 삭제할 수 없습니다. 권한을 확인하거나 다시 시도해주세요.")
         }
         queries.deleteFixedExpense(id)
     }
@@ -119,16 +125,8 @@ class FixedExpenseRepositoryImpl(
     override suspend fun countLinkedTransactions(id: Long): Long =
         queries.countByFixedExpenseId(id).executeAsOne()
 
-    override suspend fun deactivate(id: Long) {
-        // Supabase 먼저 → 성공 후 로컬 반영
-        val remoteId = queries.selectFixedExpenseRemoteId(id).executeAsOneOrNull()
-        if (!remoteId.isNullOrBlank()) {
-            supabase.postgrest.from("fixed_expenses").update({ set("is_active", false) }) {
-                filter { eq("id", remoteId) }
-            }
-        }
-        queries.deactivateFixedExpense(id)
-    }
+    override suspend fun getRemoteId(localId: Long): String =
+        queries.selectFixedExpenseRemoteId(localId).executeAsOneOrNull() ?: ""
 
     override suspend fun detachFromDate(id: Long, fromDateStr: String) {
         queries.detachFixedExpenseFromDate(id, fromDateStr)
@@ -210,6 +208,7 @@ class FixedExpenseRepositoryImpl(
         startYear = start_year.toInt(),
         startMonth = start_month.toInt(),
         note = note,
-        isActive = is_active != 0L
+        isActive = is_active != 0L,
+        remoteId = remote_id
     )
 }

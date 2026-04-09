@@ -70,23 +70,6 @@ CREATE TABLE invite_codes (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE transactions (
-    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    book_id    UUID NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-    title      TEXT NOT NULL,
-    amount     BIGINT NOT NULL,
-    type       TEXT NOT NULL,
-    category   TEXT NOT NULL,
-    date       TEXT NOT NULL,
-    tx_time    TEXT NOT NULL DEFAULT '00:00:00',
-    note       TEXT NOT NULL DEFAULT '',
-    asset      TEXT NOT NULL DEFAULT '',
-    to_asset       TEXT NOT NULL DEFAULT '',
-    category_emoji TEXT NOT NULL DEFAULT '',
-    created_by     TEXT NOT NULL DEFAULT '',
-    updated_at     TIMESTAMPTZ DEFAULT NOW()
-);
-
 CREATE TABLE fixed_expenses (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     book_id      UUID NOT NULL REFERENCES books(id) ON DELETE CASCADE,
@@ -99,6 +82,24 @@ CREATE TABLE fixed_expenses (
     start_month  INT NOT NULL,
     note         TEXT NOT NULL DEFAULT '',
     is_active    BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE transactions (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    book_id          UUID NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    title            TEXT NOT NULL,
+    amount           BIGINT NOT NULL,
+    type             TEXT NOT NULL,
+    category         TEXT NOT NULL,
+    date             TEXT NOT NULL,
+    tx_time          TEXT NOT NULL DEFAULT '00:00:00',
+    note             TEXT NOT NULL DEFAULT '',
+    asset            TEXT NOT NULL DEFAULT '',
+    to_asset         TEXT NOT NULL DEFAULT '',
+    category_emoji   TEXT NOT NULL DEFAULT '',
+    created_by       TEXT NOT NULL DEFAULT '',
+    fixed_expense_id UUID REFERENCES fixed_expenses(id) ON DELETE SET NULL,
+    updated_at       TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE parent_categories (

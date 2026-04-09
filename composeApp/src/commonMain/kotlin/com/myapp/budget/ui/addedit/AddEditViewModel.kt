@@ -58,6 +58,7 @@ class AddEditViewModel(
 
     // 기존 거래의 고정지출 ID (수정 모드)
     private var loadedFixedExpenseId: Long? = null
+    private var loadedFixedExpenseRemoteId: String = ""
 
     // Y→N 확인 다이얼로그
     var showRemoveFixedDialog by mutableStateOf(false)
@@ -103,6 +104,7 @@ class AddEditViewModel(
         errorMessage = null
         saveAsFixed = false
         loadedFixedExpenseId = null
+        loadedFixedExpenseRemoteId = ""
         date = Clock.System.todayIn(TimeZone.currentSystemDefault())
         time = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).time.let { LocalTime(it.hour, it.minute) }
         transactionType = TransactionType.EXPENSE
@@ -126,6 +128,9 @@ class AddEditViewModel(
                     time = transaction.time
                     loadedFixedExpenseId = transaction.fixedExpenseId
                     saveAsFixed = transaction.fixedExpenseId != null
+                    loadedFixedExpenseRemoteId = transaction.fixedExpenseId?.let {
+                        fixedExpenseRepository.getRemoteId(it)
+                    } ?: ""
 
                     val parts = transaction.category.split("/", limit = 2)
                     val parentName = parts[0]
@@ -205,16 +210,18 @@ class AddEditViewModel(
         }
     }
 
-    /** Y→N 확인: 이번달부터 고정지출 해제 */
+    /** Y→N 확인: 고정지출 규칙 삭제 (이번달 이후 거래는 연결 해제) */
     fun confirmRemoveFixed() {
         val feId = loadedFixedExpenseId ?: return
+        val feRemoteId = loadedFixedExpenseRemoteId
         viewModelScope.launch {
-            // 고정지출 규칙 비활성화
-            fixedExpenseRepository.deactivate(feId)
-            // 이번달 1일부터 해당 고정지출 연결 해제
+            // 이번달 1일 이후 거래의 고정지출 연결 해제 (로컬)
             val firstOfMonth = LocalDate(date.year, date.monthNumber, 1).toString()
             fixedExpenseRepository.detachFromDate(feId, firstOfMonth)
+            // 고정지출 규칙 실제 삭제 (Supabase + 로컬)
+            runCatching { fixedExpenseRepository.delete(feId, feRemoteId) }
             loadedFixedExpenseId = null
+            loadedFixedExpenseRemoteId = ""
             saveAsFixed = false
             showRemoveFixedDialog = false
         }

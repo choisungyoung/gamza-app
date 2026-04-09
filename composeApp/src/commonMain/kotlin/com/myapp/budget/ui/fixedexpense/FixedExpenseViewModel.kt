@@ -22,22 +22,24 @@ class FixedExpenseViewModel(
     private val transactionRepository: TransactionRepository
 ) : ViewModel() {
 
-    val fixedExpenses: StateFlow<List<FixedExpense>> = fixedExpenseRepository.getAllIncludingInactive()
+    val fixedExpenses: StateFlow<List<FixedExpense>> = fixedExpenseRepository.getAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _uiState = MutableStateFlow(FixedExpenseUiState())
     val uiState: StateFlow<FixedExpenseUiState> = _uiState.asStateFlow()
 
-    fun delete(id: Long, keepTransactions: Boolean, onSuccess: () -> Unit) {
+    fun delete(id: Long, remoteId: String, keepTransactions: Boolean, onSuccess: () -> Unit) {
         viewModelScope.launch {
             _uiState.value = FixedExpenseUiState(isLoading = true)
             runCatching {
                 if (keepTransactions) {
                     transactionRepository.detachFixedExpense(id)
                 } else {
+                    // 로컬 삭제 + Supabase 거래도 삭제 (삭제 안 하면 재시작 시 pullBookData가 복원)
                     transactionRepository.deleteByFixedExpenseId(id)
+                    transactionRepository.deleteByFixedExpenseRemoteId(remoteId)
                 }
-                fixedExpenseRepository.delete(id)
+                fixedExpenseRepository.delete(id, remoteId)
             }.onSuccess {
                 _uiState.value = FixedExpenseUiState()
                 onSuccess()

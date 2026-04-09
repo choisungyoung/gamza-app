@@ -10,5 +10,6 @@ data class FixedExpense(
     val startYear: Int,
     val startMonth: Int,
     val note: String = "",
-    val isActive: Boolean = true
+    val isActive: Boolean = true,
+    val remoteId: String = ""
 )

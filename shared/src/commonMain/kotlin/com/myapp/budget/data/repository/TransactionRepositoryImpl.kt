@@ -139,6 +139,11 @@ class TransactionRepositoryImpl(
         queries.deleteByFixedExpenseId(fixedExpenseId)
     }
 
+    override suspend fun deleteByFixedExpenseRemoteId(feRemoteId: String) {
+        if (feRemoteId.isBlank()) return
+        supabase.postgrest.from("transactions").delete { filter { eq("fixed_expense_id", feRemoteId) } }
+    }
+
     private fun com.myapp.budget.db.TransactionEntity.toModel() = Transaction(
         id = id,
         title = title,

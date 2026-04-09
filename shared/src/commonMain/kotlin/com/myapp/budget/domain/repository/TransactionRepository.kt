@@ -12,4 +12,5 @@ interface TransactionRepository {
     suspend fun getByFixedExpenseId(fixedExpenseId: Long): List<Transaction>
     suspend fun detachFixedExpense(fixedExpenseId: Long)
     suspend fun deleteByFixedExpenseId(fixedExpenseId: Long)
+    suspend fun deleteByFixedExpenseRemoteId(feRemoteId: String)
 }

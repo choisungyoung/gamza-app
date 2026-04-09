@@ -478,19 +478,14 @@ class BookRepositoryImpl(
             .decodeList<AssetRemoteDto>()
 
         val fixedExpenses = supabase.postgrest.from("fixed_expenses")
-            .select { filter { eq("book_id", bookId) } }
+            .select { filter { eq("book_id", bookId); eq("is_active", true) } }
             .decodeList<FixedExpenseRemoteDto>()
 
         val transactions = supabase.postgrest.from("transactions")
             .select { filter { eq("book_id", bookId) } }
             .decodeList<TransactionRemoteDto>()
 
-        // Supabase에서 빈 목록이 반환됐을 때 로컬 데이터를 삭제하면 안 되는 경우 감지
-        // (RLS 차단 or 네트워크 오류로 빈 목록 반환 시 로컬 데이터 보호)
-        val localFixedExpenseCount = queries.selectAllFixedExpensesIncludingInactiveByBookId(bookId)
-            .executeAsList().size
-        val skipFixedExpenseSync = fixedExpenses.isEmpty() && localFixedExpenseCount > 0
-
+        // 네트워크 오류로 빈 목록 반환 시 로컬 데이터 보호 (거래 내역만 적용)
         val localTransactionCount = queries.selectByBookId(bookId).executeAsList().size
         val skipTransactionSync = transactions.isEmpty() && localTransactionCount > 0
 
@@ -499,7 +494,7 @@ class BookRepositoryImpl(
         withContext(Dispatchers.Default) {
             database.transaction {
                 if (!skipTransactionSync) queries.deleteTransactionsByBookId(bookId)
-                if (!skipFixedExpenseSync) queries.deleteFixedExpensesByBookId(bookId)
+                queries.deleteFixedExpensesByBookId(bookId)
                 queries.deleteUserCategoriesByBookId(bookId)
                 queries.deleteParentCategoriesByBookId(bookId)
                 queries.deleteAssetsByBookId(bookId)
@@ -538,15 +533,13 @@ class BookRepositoryImpl(
                     queries.updateAssetRemoteId(a.id, localId)
                 }
 
-                // 고정지출 (Supabase 빈 목록이면 로컬 유지)
-                if (!skipFixedExpenseSync) {
-                    fixedExpenses.forEach { fe ->
-                        queries.insertFixedExpenseWithBookFull(fe.title, fe.amount, fe.category, fe.asset,
-                            fe.dayOfMonth.toLong(), fe.startYear.toLong(), fe.startMonth.toLong(),
-                            fe.note, if (fe.isActive) 1L else 0L, bookId)
-                        val localId = queries.lastInsertRowId().executeAsOne()
-                        queries.updateFixedExpenseRemoteId(fe.id, localId)
-                    }
+                // 고정지출 (is_active=true인 것만 Supabase에서 가져옴 → 삭제된 것은 로컬에도 없음)
+                fixedExpenses.forEach { fe ->
+                    queries.insertFixedExpenseWithBookFull(fe.title, fe.amount, fe.category, fe.asset,
+                        fe.dayOfMonth.toLong(), fe.startYear.toLong(), fe.startMonth.toLong(),
+                        fe.note, 1L, bookId)
+                    val localId = queries.lastInsertRowId().executeAsOne()
+                    queries.updateFixedExpenseRemoteId(fe.id, localId)
                 }
 
                 // 거래 내역 (Supabase 빈 목록이면 로컬 유지)
