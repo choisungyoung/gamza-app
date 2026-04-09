@@ -68,6 +68,10 @@ class FixedExpenseRepositoryImpl(
             )
         ) { select() }.decodeSingle<FixedExpenseRemoteDto>()
 
+        // pullBookData가 이미 실행됐을 수 있으므로 remote_id로 중복 체크
+        val existingLocalId = queries.selectFixedExpenseIdByRemoteId(dto.id).executeAsOneOrNull()
+        if (existingLocalId != null) return existingLocalId
+
         // 로컬 캐시 업데이트
         queries.insertFixedExpenseWithBook(
             title = fixedExpense.title, amount = fixedExpense.amount,

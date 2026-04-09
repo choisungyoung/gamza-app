@@ -410,6 +410,9 @@ UPDATE TransactionEntity SET remote_id = ? WHERE id = ?;
 selectTransactionRemoteId:
 SELECT remote_id FROM TransactionEntity WHERE id = ?;
 
+selectTransactionIdByRemoteId:
+SELECT id FROM TransactionEntity WHERE remote_id = ?;
+
 updateFixedExpenseRemoteId:
 UPDATE FixedExpenseEntity SET remote_id = ? WHERE id = ?;
 

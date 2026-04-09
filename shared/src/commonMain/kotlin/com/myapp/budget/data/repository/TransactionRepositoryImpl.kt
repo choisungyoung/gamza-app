@@ -43,6 +43,11 @@ class TransactionRepositoryImpl(
             ?: error("활성화된 가계부가 없습니다. 로그인이 필요합니다.")
         val createdBy = sessionManager.currentUser.value?.id ?: ""
 
+        // fixed_expense_id를 로컬 ID → Supabase remote UUID로 변환
+        val feRemoteId = transaction.fixedExpenseId?.let { localFeId ->
+            queries.selectFixedExpenseRemoteId(localFeId).executeAsOneOrNull()?.takeIf { it.isNotBlank() }
+        }
+
         // 서버에 먼저 저장
         val dto = supabase.postgrest.from("transactions").insert(
             TransactionRemoteDto(
@@ -51,9 +56,14 @@ class TransactionRepositoryImpl(
                 category = transaction.category, date = transaction.date.toString(),
                 time = transaction.time.toString(), note = transaction.note,
                 asset = transaction.asset, toAsset = transaction.toAsset,
-                createdBy = createdBy, categoryEmoji = transaction.categoryEmoji
+                createdBy = createdBy, categoryEmoji = transaction.categoryEmoji,
+                fixedExpenseId = feRemoteId
             )
         ) { select() }.decodeSingle<TransactionRemoteDto>()
+
+        // pullBookData가 이미 실행됐을 수 있으므로 remote_id로 중복 체크
+        val existingLocalId = queries.selectTransactionIdByRemoteId(dto.id).executeAsOneOrNull()
+        if (existingLocalId != null) return
 
         // 로컬 캐시 업데이트
         queries.insertWithBookAndCreator(
