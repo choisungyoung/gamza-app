@@ -107,6 +107,9 @@ UPDATE FixedExpenseEntity
 SET title = ?, amount = ?, day_of_month = ?, note = ?
 WHERE id = ?;
 
+selectFixedExpenseById:
+SELECT * FROM FixedExpenseEntity WHERE id = ?;
+
 deleteFixedExpense:
 DELETE FROM FixedExpenseEntity WHERE id = ?;
 

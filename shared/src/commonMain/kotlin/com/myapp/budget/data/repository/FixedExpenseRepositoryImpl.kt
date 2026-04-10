@@ -13,6 +13,7 @@ import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -72,19 +73,27 @@ class FixedExpenseRepositoryImpl(
         val existingLocalId = queries.selectFixedExpenseIdByRemoteId(dto.id).executeAsOneOrNull()
         if (existingLocalId != null) return existingLocalId
 
-        // 로컬 캐시 업데이트
-        queries.insertFixedExpenseWithBook(
-            title = fixedExpense.title, amount = fixedExpense.amount,
-            category = fixedExpense.category, asset = fixedExpense.asset,
-            day_of_month = fixedExpense.dayOfMonth.toLong(),
-            start_year = fixedExpense.startYear.toLong(),
-            start_month = fixedExpense.startMonth.toLong(),
-            note = fixedExpense.note, book_id = bookId,
-        )
-        val localId = queries.lastFixedExpenseRowId().executeAsOne()
-        queries.updateFixedExpenseRemoteId(dto.id, localId)
+        // 로컬 캐시 업데이트: insert + lastRowId + updateRemoteId를 원자적 트랜잭션으로 묶음
+        // (autoRegisterPending 등 병렬 코루틴이 lastRowId를 오염시키는 race condition 방지)
+        return withContext(Dispatchers.Default) {
+            database.transactionWithResult {
+                // 트랜잭션 진입 후 한 번 더 중복 체크
+                val doubleCheck = queries.selectFixedExpenseIdByRemoteId(dto.id).executeAsOneOrNull()
+                if (doubleCheck != null) return@transactionWithResult doubleCheck
 
-        return localId
+                queries.insertFixedExpenseWithBook(
+                    title = fixedExpense.title, amount = fixedExpense.amount,
+                    category = fixedExpense.category, asset = fixedExpense.asset,
+                    day_of_month = fixedExpense.dayOfMonth.toLong(),
+                    start_year = fixedExpense.startYear.toLong(),
+                    start_month = fixedExpense.startMonth.toLong(),
+                    note = fixedExpense.note, book_id = bookId,
+                )
+                val localId = queries.lastFixedExpenseRowId().executeAsOne()
+                queries.updateFixedExpenseRemoteId(dto.id, localId)
+                localId
+            }
+        }
     }
 
     override suspend fun update(id: Long, title: String, amount: Long, dayOfMonth: Int, note: String) {
@@ -103,16 +112,39 @@ class FixedExpenseRepositoryImpl(
     }
 
     override suspend fun delete(id: Long, remoteId: String) {
-        // Supabase 먼저 삭제 → 실패 시 로컬도 삭제하지 않음
-        // (로컬 먼저 삭제하면 pull 시 Supabase 데이터로 복원되는 버그 발생)
-        // remoteId는 호출자로부터 직접 전달받아 pullBookData의 ID 재할당 경쟁 조건 방지
-        val effectiveRemoteId = remoteId.ifBlank {
+        val bookId = sessionManager.activeBookId ?: error("활성화된 가계부가 없습니다.")
+
+        // remote_id를 확정: 파라미터 → 로컬 DB → Supabase 검색 순으로 시도
+        var effectiveRemoteId: String? = remoteId.ifBlank {
             queries.selectFixedExpenseRemoteId(id).executeAsOneOrNull()
         }
+
+        // remote_id가 blank인 경우 (race condition 또는 구버전 데이터):
+        // Supabase에서 동일한 항목을 제목·금액·날짜로 검색
+        if (effectiveRemoteId.isNullOrBlank()) {
+            val fe = queries.selectFixedExpenseById(id).executeAsOneOrNull()
+            if (fe != null) {
+                val match = supabase.postgrest.from("fixed_expenses")
+                    .select { filter {
+                        eq("book_id", bookId)
+                        eq("title", fe.title)
+                        eq("amount", fe.amount)
+                        eq("day_of_month", fe.day_of_month)
+                        eq("is_active", true)
+                    } }
+                    .decodeList<FixedExpenseRemoteDto>()
+                    .firstOrNull()
+                effectiveRemoteId = match?.id
+                // 찾은 remote_id를 로컬에 저장해 다음 사용에 대비
+                if (!effectiveRemoteId.isNullOrBlank()) {
+                    queries.updateFixedExpenseRemoteId(effectiveRemoteId!!, id)
+                }
+            }
+        }
+
         if (!effectiveRemoteId.isNullOrBlank()) {
             supabase.postgrest.from("fixed_expenses").delete { filter { eq("id", effectiveRemoteId) } }
-            // PostgREST는 RLS가 막아도 HTTP 200을 반환해 예외가 발생하지 않음.
-            // SELECT로 실제 삭제 여부를 확인해 로컬 삭제를 막음.
+            // PostgREST는 RLS가 막아도 HTTP 200을 반환 → SELECT로 실제 삭제 여부 확인
             val stillExists = supabase.postgrest.from("fixed_expenses")
                 .select { filter { eq("id", effectiveRemoteId) } }
                 .decodeList<FixedExpenseRemoteDto>()
