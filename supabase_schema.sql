@@ -80,8 +80,7 @@ CREATE TABLE fixed_expenses (
     day_of_month INT NOT NULL DEFAULT 1,
     start_year   INT NOT NULL,
     start_month  INT NOT NULL,
-    note         TEXT NOT NULL DEFAULT '',
-    is_active    BOOLEAN NOT NULL DEFAULT TRUE
+    note         TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE transactions (

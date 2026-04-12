@@ -375,7 +375,7 @@ class BookRepositoryImpl(
                         FixedExpenseRemoteDto(bookId = bookId, title = fe.title, amount = fe.amount,
                             category = fe.category, asset = fe.asset, dayOfMonth = fe.day_of_month.toInt(),
                             startYear = fe.start_year.toInt(), startMonth = fe.start_month.toInt(),
-                            note = fe.note, isActive = fe.is_active != 0L)
+                            note = fe.note)
                     ) { select() }.decodeSingle<FixedExpenseRemoteDto>()
                     queries.updateFixedExpenseRemoteId(dto.id, fe.id)
                 }
@@ -537,7 +537,7 @@ class BookRepositoryImpl(
                 fixedExpenses.forEach { fe ->
                     queries.insertFixedExpenseWithBookFull(fe.title, fe.amount, fe.category, fe.asset,
                         fe.dayOfMonth.toLong(), fe.startYear.toLong(), fe.startMonth.toLong(),
-                        fe.note, 1L, bookId)
+                        fe.note, bookId)
                     val localId = queries.lastInsertRowId().executeAsOne()
                     queries.updateFixedExpenseRemoteId(fe.id, localId)
                 }

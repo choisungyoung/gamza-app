@@ -77,30 +77,29 @@ CREATE TABLE FixedExpenseEntity (
     start_year   INTEGER NOT NULL,
     start_month  INTEGER NOT NULL,
     note         TEXT    NOT NULL DEFAULT '',
-    is_active    INTEGER NOT NULL DEFAULT 1,
     book_id      TEXT    NOT NULL DEFAULT '',
     remote_id    TEXT    NOT NULL DEFAULT ''
 );
 
 selectAllFixedExpenses:
-SELECT * FROM FixedExpenseEntity WHERE is_active = 1 ORDER BY id ASC;
+SELECT * FROM FixedExpenseEntity ORDER BY id ASC;
 
 selectAllFixedExpensesIncludingInactive:
-SELECT * FROM FixedExpenseEntity ORDER BY is_active DESC, id ASC;
+SELECT * FROM FixedExpenseEntity ORDER BY id ASC;
 
 selectFixedExpensesByBookId:
-SELECT * FROM FixedExpenseEntity WHERE is_active = 1 AND book_id = ? ORDER BY id ASC;
+SELECT * FROM FixedExpenseEntity WHERE book_id = ? ORDER BY id ASC;
 
 selectAllFixedExpensesIncludingInactiveByBookId:
-SELECT * FROM FixedExpenseEntity WHERE book_id = ? ORDER BY is_active DESC, id ASC;
+SELECT * FROM FixedExpenseEntity WHERE book_id = ? ORDER BY id ASC;
 
 insertFixedExpense:
-INSERT INTO FixedExpenseEntity (title, amount, category, asset, day_of_month, start_year, start_month, note, is_active)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1);
+INSERT INTO FixedExpenseEntity (title, amount, category, asset, day_of_month, start_year, start_month, note)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 insertFixedExpenseWithBook:
-INSERT INTO FixedExpenseEntity (title, amount, category, asset, day_of_month, start_year, start_month, note, is_active, book_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?);
+INSERT INTO FixedExpenseEntity (title, amount, category, asset, day_of_month, start_year, start_month, note, book_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateFixedExpense:
 UPDATE FixedExpenseEntity
@@ -112,9 +111,6 @@ SELECT * FROM FixedExpenseEntity WHERE id = ?;
 
 deleteFixedExpense:
 DELETE FROM FixedExpenseEntity WHERE id = ?;
-
-deactivateFixedExpense:
-UPDATE FixedExpenseEntity SET is_active = 0 WHERE id = ?;
 
 lastFixedExpenseRowId:
 SELECT last_insert_rowid();
@@ -478,8 +474,8 @@ insertAssetWithBook:
 INSERT INTO AssetEntity (name, emoji, owner, initial_balance, group_key, sort_order, book_id) VALUES (?, ?, ?, ?, ?, ?, ?);
 
 insertFixedExpenseWithBookFull:
-INSERT INTO FixedExpenseEntity (title, amount, category, asset, day_of_month, start_year, start_month, note, is_active, book_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO FixedExpenseEntity (title, amount, category, asset, day_of_month, start_year, start_month, note, book_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- ── 전체 데이터 삭제 ─────────────────────────────────────────────────────────
 

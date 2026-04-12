@@ -38,12 +38,12 @@ class DbViewerRepositoryImpl(
             ),
             DbTableData(
                 tableName = "FixedExpenseEntity",
-                columns = listOf("id", "title", "amount", "category", "asset", "day", "s_year", "s_month", "note", "active"),
+                columns = listOf("id", "title", "amount", "category", "asset", "day", "s_year", "s_month", "note"),
                 rows = q.selectAllFixedExpensesIncludingInactive().executeAsList().map { e ->
                     listOf(
                         e.id.toString(), e.title, e.amount.toString(), e.category,
                         e.asset, e.day_of_month.toString(), e.start_year.toString(),
-                        e.start_month.toString(), e.note, e.is_active.toString()
+                        e.start_month.toString(), e.note
                     )
                 }
             ),

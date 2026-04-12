@@ -65,7 +65,7 @@ class FixedExpenseRepositoryImpl(
                 amount = fixedExpense.amount, category = fixedExpense.category,
                 asset = fixedExpense.asset, dayOfMonth = fixedExpense.dayOfMonth,
                 startYear = fixedExpense.startYear, startMonth = fixedExpense.startMonth,
-                note = fixedExpense.note, isActive = true
+                note = fixedExpense.note
             )
         ) { select() }.decodeSingle<FixedExpenseRemoteDto>()
 
@@ -237,7 +237,6 @@ class FixedExpenseRepositoryImpl(
         startYear = start_year.toInt(),
         startMonth = start_month.toInt(),
         note = note,
-        isActive = is_active != 0L,
         remoteId = remote_id
     )
 }

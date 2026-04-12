@@ -38,7 +38,6 @@ data class FixedExpenseRemoteDto(
     @SerialName("start_year") val startYear: Int,
     @SerialName("start_month") val startMonth: Int,
     val note: String = "",
-    @SerialName("is_active") val isActive: Boolean = true,
 )
 
 @Serializable

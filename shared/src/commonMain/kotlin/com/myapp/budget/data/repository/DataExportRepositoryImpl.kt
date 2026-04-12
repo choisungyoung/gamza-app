@@ -44,13 +44,13 @@ class DataExportRepositoryImpl(
     }
 
     private fun buildFixedExpensesSheet(list: List<FixedExpense>): XlsxBuilder.SheetData {
-        val header = listOf("ID", "제목", "금액", "카테고리", "자산", "일", "시작연도", "시작월", "메모", "활성")
+        val header = listOf("ID", "제목", "금액", "카테고리", "자산", "일", "시작연도", "시작월", "메모")
         val rows = mutableListOf(header)
         for (f in list) {
             rows.add(listOf(
                 f.id.toString(), f.title, f.amount.toString(), f.category,
                 f.asset, f.dayOfMonth.toString(), f.startYear.toString(),
-                f.startMonth.toString(), f.note, if (f.isActive) "1" else "0"
+                f.startMonth.toString(), f.note
             ))
         }
         return XlsxBuilder.SheetData("고정지출", rows)
@@ -136,8 +136,7 @@ class DataExportRepositoryImpl(
                         dayOfMonth = day.coerceIn(1, 31),
                         startYear = startYear,
                         startMonth = startMonth.coerceIn(1, 12),
-                        note = row.getOrElse(8) { "" },
-                        isActive = row.getOrElse(9) { "1" } != "0"
+                        note = row.getOrElse(8) { "" }
                     )
                 )
                 ok++
