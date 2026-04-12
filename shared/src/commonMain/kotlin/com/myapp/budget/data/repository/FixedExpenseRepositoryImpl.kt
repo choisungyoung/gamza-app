@@ -114,43 +114,40 @@ class FixedExpenseRepositoryImpl(
     override suspend fun delete(id: Long, remoteId: String) {
         val bookId = sessionManager.activeBookId ?: error("활성화된 가계부가 없습니다.")
 
-        // remote_id를 확정: 파라미터 → 로컬 DB → Supabase 검색 순으로 시도
-        var effectiveRemoteId: String? = remoteId.ifBlank {
-            queries.selectFixedExpenseRemoteId(id).executeAsOneOrNull()
-        }
+        val fe = queries.selectFixedExpenseById(id).executeAsOneOrNull()
 
-        // remote_id가 blank인 경우 (race condition 또는 구버전 데이터):
-        // Supabase에서 동일한 항목을 제목·금액·날짜로 검색
-        if (effectiveRemoteId.isNullOrBlank()) {
-            val fe = queries.selectFixedExpenseById(id).executeAsOneOrNull()
-            if (fe != null) {
-                val match = supabase.postgrest.from("fixed_expenses")
-                    .select { filter {
+        if (fe != null) {
+            // 비즈니스 키로 Supabase 레코드 삭제 (remote_id·is_active에 의존하지 않음)
+            supabase.postgrest.from("fixed_expenses").delete {
+                filter {
+                    eq("book_id", bookId)
+                    eq("title", fe.title)
+                    eq("amount", fe.amount)
+                    eq("day_of_month", fe.day_of_month)
+                    eq("start_year", fe.start_year)
+                    eq("start_month", fe.start_month)
+                }
+            }
+            // PostgREST는 RLS가 막아도 HTTP 200을 반환 → SELECT로 실제 삭제 여부 확인
+            val stillExists = supabase.postgrest.from("fixed_expenses")
+                .select {
+                    filter {
                         eq("book_id", bookId)
                         eq("title", fe.title)
                         eq("amount", fe.amount)
                         eq("day_of_month", fe.day_of_month)
-                        eq("is_active", true)
-                    } }
-                    .decodeList<FixedExpenseRemoteDto>()
-                    .firstOrNull()
-                effectiveRemoteId = match?.id
-                // 찾은 remote_id를 로컬에 저장해 다음 사용에 대비
-                if (!effectiveRemoteId.isNullOrBlank()) {
-                    queries.updateFixedExpenseRemoteId(effectiveRemoteId!!, id)
+                        eq("start_year", fe.start_year)
+                        eq("start_month", fe.start_month)
+                    }
                 }
-            }
-        }
-
-        if (!effectiveRemoteId.isNullOrBlank()) {
-            supabase.postgrest.from("fixed_expenses").delete { filter { eq("id", effectiveRemoteId) } }
-            // PostgREST는 RLS가 막아도 HTTP 200을 반환 → SELECT로 실제 삭제 여부 확인
-            val stillExists = supabase.postgrest.from("fixed_expenses")
-                .select { filter { eq("id", effectiveRemoteId) } }
                 .decodeList<FixedExpenseRemoteDto>()
                 .isNotEmpty()
             if (stillExists) error("고정지출을 삭제할 수 없습니다. 권한을 확인하거나 다시 시도해주세요.")
+        } else if (remoteId.isNotBlank()) {
+            // 로컬에 없는 엣지 케이스: remote_id로 폴백
+            supabase.postgrest.from("fixed_expenses").delete { filter { eq("id", remoteId) } }
         }
+
         queries.deleteFixedExpense(id)
     }
 

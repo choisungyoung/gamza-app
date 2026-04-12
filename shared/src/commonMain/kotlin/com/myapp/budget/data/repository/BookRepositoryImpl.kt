@@ -478,7 +478,7 @@ class BookRepositoryImpl(
             .decodeList<AssetRemoteDto>()
 
         val fixedExpenses = supabase.postgrest.from("fixed_expenses")
-            .select { filter { eq("book_id", bookId); eq("is_active", true) } }
+            .select { filter { eq("book_id", bookId) } }
             .decodeList<FixedExpenseRemoteDto>()
 
         val transactions = supabase.postgrest.from("transactions")
@@ -533,7 +533,7 @@ class BookRepositoryImpl(
                     queries.updateAssetRemoteId(a.id, localId)
                 }
 
-                // 고정지출 (is_active=true인 것만 Supabase에서 가져옴 → 삭제된 것은 로컬에도 없음)
+                // 고정지출 (hard delete 방식 → Supabase에 없는 레코드는 로컬에도 없음)
                 fixedExpenses.forEach { fe ->
                     queries.insertFixedExpenseWithBookFull(fe.title, fe.amount, fe.category, fe.asset,
                         fe.dayOfMonth.toLong(), fe.startYear.toLong(), fe.startMonth.toLong(),
