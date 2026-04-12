@@ -35,9 +35,8 @@ class FixedExpenseViewModel(
                 if (keepTransactions) {
                     transactionRepository.detachFixedExpense(id)
                 } else {
-                    // 로컬 삭제 + Supabase 거래도 삭제 (삭제 안 하면 재시작 시 pullBookData가 복원)
+                    // 로컬 거래 삭제 (Supabase 거래는 repository.delete() 내부에서 FK 해소 목적으로 처리)
                     transactionRepository.deleteByFixedExpenseId(id)
-                    transactionRepository.deleteByFixedExpenseRemoteId(remoteId)
                 }
                 fixedExpenseRepository.delete(id, remoteId)
             }.onSuccess {

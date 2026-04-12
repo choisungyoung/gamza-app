@@ -116,8 +116,20 @@ class FixedExpenseRepositoryImpl(
 
         val fe = queries.selectFixedExpenseById(id).executeAsOneOrNull()
 
+        // 로컬 DB의 remote_id를 우선 사용 (파라미터가 stale하거나 blank일 수 있음)
+        val effectiveRemoteId = fe?.remote_id?.takeIf { it.isNotBlank() }
+            ?: remoteId.takeIf { it.isNotBlank() }
+
+        // FK 제약 해소: transactions.fixed_expense_id가 이 고정지출을 참조하면
+        // 먼저 Supabase 거래를 삭제해야 fixed_expense DELETE가 통과됨
+        if (effectiveRemoteId != null) {
+            supabase.postgrest.from("transactions").delete {
+                filter { eq("fixed_expense_id", effectiveRemoteId) }
+            }
+        }
+
         if (fe != null) {
-            // 비즈니스 키로 Supabase 레코드 삭제 (remote_id·is_active에 의존하지 않음)
+            // 비즈니스 키로 Supabase 고정지출 삭제 (remote_id에 의존하지 않음)
             supabase.postgrest.from("fixed_expenses").delete {
                 filter {
                     eq("book_id", bookId)
@@ -143,9 +155,11 @@ class FixedExpenseRepositoryImpl(
                 .decodeList<FixedExpenseRemoteDto>()
                 .isNotEmpty()
             if (stillExists) error("고정지출을 삭제할 수 없습니다. 권한을 확인하거나 다시 시도해주세요.")
-        } else if (remoteId.isNotBlank()) {
+        } else if (effectiveRemoteId != null) {
             // 로컬에 없는 엣지 케이스: remote_id로 폴백
-            supabase.postgrest.from("fixed_expenses").delete { filter { eq("id", remoteId) } }
+            supabase.postgrest.from("fixed_expenses").delete {
+                filter { eq("id", effectiveRemoteId) }
+            }
         }
 
         queries.deleteFixedExpense(id)
