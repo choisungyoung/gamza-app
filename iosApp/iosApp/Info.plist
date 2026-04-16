@@ -45,9 +45,15 @@
             <string>Editor</string>
             <key>CFBundleURLSchemes</key>
             <array>
-                <!-- TODO: Google Cloud Console iOS Client ID의 역순 값으로 교체 -->
-                <!-- 예: com.googleusercontent.apps.XXXXX-YYYY -->
                 <string>com.googleusercontent.apps.194931040394-8f015cfbp84fnhio2pc7tljjj140okl5</string>
+            </array>
+        </dict>
+        <dict>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>gamzaapp</string>
             </array>
         </dict>
     </array>

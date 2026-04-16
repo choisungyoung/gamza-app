@@ -9,7 +9,6 @@ import com.myapp.budget.domain.model.MonthlySummary
 import com.myapp.budget.domain.model.Transaction
 import com.myapp.budget.domain.model.TransactionType
 import com.myapp.budget.domain.repository.BookRepository
-import com.myapp.budget.domain.repository.FixedExpenseRepository
 import com.myapp.budget.domain.repository.TransactionRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,6 +26,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.todayIn
+
 
 data class SyncState(
     val isSyncing: Boolean = false,
@@ -46,7 +46,6 @@ data class HomeUiState(
 
 class HomeViewModel(
     private val repository: TransactionRepository,
-    private val fixedExpenseRepository: FixedExpenseRepository,
     private val sessionManager: SessionManager,
     private val bookRepository: BookRepository,
     private val realtimeManager: RealtimeManager,
@@ -77,15 +76,6 @@ class HomeViewModel(
     private val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
 
     init {
-        viewModelScope.launch {
-            fixedExpenseRepository.autoRegisterPending(today)
-        }
-
-        // 가계부 전환 시 새 가계부의 고정지출 자동 등록 재실행
-        sessionManager.bookSwitched.onEach {
-            fixedExpenseRepository.autoRegisterPending(today)
-        }.launchIn(viewModelScope)
-
         // 활성 가계부가 바뀔 때마다 Realtime 채널 갱신
         sessionManager.activeBook.onEach { book ->
             if (book != null) realtimeManager.startWatching(book.id)
@@ -139,7 +129,7 @@ class HomeViewModel(
             summary = MonthlySummary(income, expense, income - expense, breakdown),
             recentTransactions = transactions.take(5),
             fixedExpenseTransactions = thisMonth
-                .filter { it.fixedExpenseId != null }
+                .filter { it.isFixed }
                 .sortedWith(compareByDescending<Transaction> { it.date }.thenByDescending { it.time }),
             currentYear = year,
             currentMonthNum = month,

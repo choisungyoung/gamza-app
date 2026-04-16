@@ -3,12 +3,15 @@ package com.myapp.budget.platform
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import io.github.jan.supabase.SupabaseClient
-import io.github.jan.supabase.compose.auth.composeAuth
-import io.github.jan.supabase.compose.auth.composable.NativeSignInResult
-import io.github.jan.supabase.compose.auth.composable.rememberSignInWithGoogle
-import org.koin.compose.koinInject
+import com.myapp.budget.signInWithGoogleIdToken
+import com.myapp.budget.startNativeGoogleSignIn
+import kotlinx.coroutines.launch
 
 @Composable
 actual fun GoogleSignInButton(
@@ -17,22 +20,36 @@ actual fun GoogleSignInButton(
     enabled: Boolean,
     modifier: Modifier,
 ) {
-    val supabase: SupabaseClient = koinInject()
-    val state = supabase.composeAuth.rememberSignInWithGoogle(
-        onResult = { result ->
-            when (result) {
-                is NativeSignInResult.Success -> onSuccess()
-                is NativeSignInResult.Error -> onError(result.message)
-                is NativeSignInResult.ClosedByUser -> {}
-                is NativeSignInResult.NetworkError -> onError("네트워크 오류가 발생했습니다.")
-            }
-        }
-    )
+    val scope = rememberCoroutineScope()
+    var isLoading by remember { mutableStateOf(false) }
+
     OutlinedButton(
-        onClick = { state.startFlow() },
+        onClick = {
+            if (isLoading) return@OutlinedButton
+            isLoading = true
+
+            startNativeGoogleSignIn { idToken, rawNonce, error ->
+                if (idToken != null && rawNonce != null) {
+                    scope.launch {
+                        runCatching {
+                            signInWithGoogleIdToken(idToken, rawNonce)
+                            onSuccess()
+                        }.onFailure {
+                            onError(it.message ?: "Unknown error")
+                        }
+                        isLoading = false
+                    }
+                } else {
+                    scope.launch {
+                        isLoading = false
+                        if (error != null) onError(error)
+                    }
+                }
+            }
+        },
         modifier = modifier,
-        enabled = enabled,
+        enabled = enabled && !isLoading,
     ) {
-        Text("Google로 로그인")
+        Text(if (isLoading) "로그인 중..." else "Google로 로그인")
     }
 }

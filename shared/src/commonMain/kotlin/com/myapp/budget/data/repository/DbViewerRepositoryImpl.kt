@@ -14,7 +14,6 @@ class DbViewerRepositoryImpl(
         val q = database.budgetQueries
         when (tableName) {
             "TransactionEntity" -> q.deleteAllTransactions()
-            "FixedExpenseEntity" -> q.deleteAllFixedExpenses()
             "UserCategoryEntity" -> q.deleteAllUserCategories()
             "ParentCategoryEntity" -> q.deleteAllParentCategories()
             "AssetGroupEntity" -> q.deleteAllAssetGroups()
@@ -27,23 +26,12 @@ class DbViewerRepositoryImpl(
         listOf(
             DbTableData(
                 tableName = "TransactionEntity",
-                columns = listOf("id", "title", "amount", "type", "category", "date", "time", "note", "asset", "to_asset", "fixed_expense_id"),
+                columns = listOf("id", "title", "amount", "type", "category", "date", "time", "note", "asset", "to_asset", "is_fixed"),
                 rows = q.selectAll().executeAsList().map { e ->
                     listOf(
                         e.id.toString(), e.title, e.amount.toString(), e.type,
                         e.category, e.date, e.time, e.note, e.asset, e.to_asset,
-                        e.fixed_expense_id?.toString() ?: ""
-                    )
-                }
-            ),
-            DbTableData(
-                tableName = "FixedExpenseEntity",
-                columns = listOf("id", "title", "amount", "category", "asset", "day", "s_year", "s_month", "note"),
-                rows = q.selectAllFixedExpensesIncludingInactive().executeAsList().map { e ->
-                    listOf(
-                        e.id.toString(), e.title, e.amount.toString(), e.category,
-                        e.asset, e.day_of_month.toString(), e.start_year.toString(),
-                        e.start_month.toString(), e.note
+                        if (e.is_fixed != 0L) "Y" else "N"
                     )
                 }
             ),

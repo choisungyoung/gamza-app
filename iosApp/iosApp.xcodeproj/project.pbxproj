@@ -9,12 +9,13 @@
 /* Begin PBXBuildFile section */
 		21702F1F358E4E13BA028B01 /* iOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21702F1F358E4E13BA028B02 /* iOSApp.swift */; };
 		21702F1F358E4E13BA028B03 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21702F1F358E4E13BA028B04 /* ContentView.swift */; };
-		AA000001AA000001AA000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA000002AA000002AA000002 /* Assets.xcassets */; };
 		21702F1F358E4E13BA028B05 /* ComposeApp.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 21702F1F358E4E13BA028B06 /* ComposeApp.framework */; };
 		21702F1F358E4E13BA028B07 /* ComposeApp.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 21702F1F358E4E13BA028B06 /* ComposeApp.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		21702F1F358E4E13BA028B30 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 21702F1F358E4E13BA028B31 /* libsqlite3.tbd */; };
 		515678FC2F825B360065EBD9 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 515678FB2F825B360065EBD9 /* GoogleSignIn */; };
 		515678FE2F825B360065EBD9 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 515678FD2F825B360065EBD9 /* GoogleSignInSwift */; };
+		51788BED2F8E7E8B005A1926 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 51788BEC2F8E7E8B005A1926 /* GoogleService-Info.plist */; };
+		AA000001AA000001AA000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA000002AA000002AA000002 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -37,8 +38,9 @@
 		21702F1F358E4E13BA028B06 /* ComposeApp.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ComposeApp.framework; path = ../composeApp/build/bin/iosSimulatorArm64/debugFramework/ComposeApp.framework; sourceTree = "<group>"; };
 		21702F1F358E4E13BA028B09 /* iosApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iosApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		21702F1F358E4E13BA028B10 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		AA000002AA000002AA000002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		21702F1F358E4E13BA028B31 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
+		51788BEC2F8E7E8B005A1926 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		AA000002AA000002AA000002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -76,6 +78,7 @@
 		21702F1F358E4E13BA028B14 /* iosApp */ = {
 			isa = PBXGroup;
 			children = (
+				51788BEC2F8E7E8B005A1926 /* GoogleService-Info.plist */,
 				21702F1F358E4E13BA028B02 /* iOSApp.swift */,
 				21702F1F358E4E13BA028B04 /* ContentView.swift */,
 				21702F1F358E4E13BA028B10 /* Info.plist */,
@@ -157,6 +160,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA000001AA000001AA000001 /* Assets.xcassets in Resources */,
+				51788BED2F8E7E8B005A1926 /* GoogleService-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -17,7 +17,6 @@ DROP POLICY IF EXISTS "invite_codes_select"           ON invite_codes;
 DROP POLICY IF EXISTS "invite_codes_insert"           ON invite_codes;
 DROP POLICY IF EXISTS "invite_codes_update"           ON invite_codes;
 DROP POLICY IF EXISTS "transactions_book_member"      ON transactions;
-DROP POLICY IF EXISTS "fixed_expenses_book_member"    ON fixed_expenses;
 DROP POLICY IF EXISTS "parent_categories_book_member" ON parent_categories;
 DROP POLICY IF EXISTS "user_categories_book_member"   ON user_categories;
 DROP POLICY IF EXISTS "asset_groups_book_member"      ON asset_groups;
@@ -37,7 +36,6 @@ DROP TABLE IF EXISTS asset_groups       CASCADE;
 DROP TABLE IF EXISTS user_categories    CASCADE;
 DROP TABLE IF EXISTS parent_categories  CASCADE;
 DROP TABLE IF EXISTS transactions       CASCADE;
-DROP TABLE IF EXISTS fixed_expenses     CASCADE;
 DROP TABLE IF EXISTS invite_codes       CASCADE;
 DROP TABLE IF EXISTS book_members       CASCADE;
 DROP TABLE IF EXISTS books              CASCADE;
@@ -73,36 +71,22 @@ CREATE TABLE invite_codes (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 고정지출 (hard delete 방식 — is_active 없음)
-CREATE TABLE fixed_expenses (
-    id           UUID   PRIMARY KEY DEFAULT gen_random_uuid(),
-    book_id      UUID   NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-    title        TEXT   NOT NULL,
-    amount       BIGINT NOT NULL,
-    category     TEXT   NOT NULL DEFAULT '',
-    asset        TEXT   NOT NULL DEFAULT '',
-    day_of_month INT    NOT NULL DEFAULT 1,
-    start_year   INT    NOT NULL,
-    start_month  INT    NOT NULL,
-    note         TEXT   NOT NULL DEFAULT ''
-);
-
 -- 거래 내역
 CREATE TABLE transactions (
-    id               UUID   PRIMARY KEY DEFAULT gen_random_uuid(),
-    book_id          UUID   NOT NULL REFERENCES books(id) ON DELETE CASCADE,
-    title            TEXT   NOT NULL,
-    amount           BIGINT NOT NULL,
-    type             TEXT   NOT NULL,                        -- INCOME | EXPENSE | TRANSFER
-    category         TEXT   NOT NULL DEFAULT '',
-    category_emoji   TEXT   NOT NULL DEFAULT '',
-    date             TEXT   NOT NULL,                        -- ISO-8601 (YYYY-MM-DD)
-    tx_time          TEXT   NOT NULL DEFAULT '00:00:00',     -- HH:MM:SS
-    note             TEXT   NOT NULL DEFAULT '',
-    asset            TEXT   NOT NULL DEFAULT '',
-    to_asset         TEXT   NOT NULL DEFAULT '',
-    created_by       TEXT   NOT NULL DEFAULT '',
-    fixed_expense_id UUID   REFERENCES fixed_expenses(id) ON DELETE SET NULL
+    id             UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+    book_id        UUID    NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    title          TEXT    NOT NULL,
+    amount         BIGINT  NOT NULL,
+    type           TEXT    NOT NULL,                        -- INCOME | EXPENSE | TRANSFER
+    category       TEXT    NOT NULL DEFAULT '',
+    category_emoji TEXT    NOT NULL DEFAULT '',
+    date           TEXT    NOT NULL,                        -- ISO-8601 (YYYY-MM-DD)
+    tx_time        TEXT    NOT NULL DEFAULT '00:00:00',     -- HH:MM:SS
+    note           TEXT    NOT NULL DEFAULT '',
+    asset          TEXT    NOT NULL DEFAULT '',
+    to_asset       TEXT    NOT NULL DEFAULT '',
+    created_by     TEXT    NOT NULL DEFAULT '',
+    is_fixed       BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- 지출/수입 상위 카테고리
@@ -154,7 +138,6 @@ CREATE TABLE assets (
 ALTER TABLE books             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE book_members      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invite_codes      ENABLE ROW LEVEL SECURITY;
-ALTER TABLE fixed_expenses    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE parent_categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_categories   ENABLE ROW LEVEL SECURITY;
@@ -227,11 +210,6 @@ CREATE POLICY "invite_codes_update" ON invite_codes
 
 -- ── 10. 자식 테이블 정책 ─────────────────────────────────────────────────────
 -- 가계부 멤버이면 모든 CRUD 허용
-
-CREATE POLICY "fixed_expenses_book_member" ON fixed_expenses
-    FOR ALL
-    USING (is_book_member(book_id))
-    WITH CHECK (is_book_member(book_id));
 
 CREATE POLICY "transactions_book_member" ON transactions
     FOR ALL

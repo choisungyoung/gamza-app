@@ -7,7 +7,7 @@ import com.myapp.budget.ui.book.BookViewModel
 import com.myapp.budget.ui.category.CategoryManagementViewModel
 import com.myapp.budget.ui.datamanagement.DataManagementViewModel
 import com.myapp.budget.ui.dbviewer.DbViewerViewModel
-import com.myapp.budget.ui.fixedexpense.FixedExpenseViewModel
+import com.myapp.budget.ui.fixedexpense.FixedTransactionViewModel
 import com.myapp.budget.ui.home.HomeViewModel
 import com.myapp.budget.ui.statistics.StatisticsViewModel
 import com.myapp.budget.ui.transactions.TransactionListViewModel
@@ -23,7 +23,7 @@ val appModule = module {
     viewModelOf(::CategoryManagementViewModel)
     viewModelOf(::AssetViewModel)
     viewModelOf(::SearchViewModel)
-    viewModelOf(::FixedExpenseViewModel)
+    viewModelOf(::FixedTransactionViewModel)
     viewModelOf(::DataManagementViewModel)
     viewModelOf(::DbViewerViewModel)
     viewModelOf(::AuthViewModel)

@@ -27,7 +27,9 @@
       "Bash(grep *)",
       "Write(*)",
       "Read(*)",
-      "Bash(./gradlew :composeApp:compileDebugKotlinAndroid)"
+      "Bash(./gradlew :composeApp:compileDebugKotlinAndroid)",
+      "Bash(./gradlew :shared:compileKotlinAndroid :composeApp:compileDebugKotlin --quiet)",
+      "Bash(./gradlew :shared:compileDebugKotlinAndroid :composeApp:compileDebugKotlinAndroid)"
     ]
   },
   "plansDirectory": ".claude/plans"

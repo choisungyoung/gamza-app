@@ -76,7 +76,6 @@ class AuthRepositoryImpl(
         // 로그아웃 시 로컬 DB 전체 초기화 (서버가 유일한 저장소)
         with(database.budgetQueries) {
             deleteAllTransactions()
-            deleteAllFixedExpenses()
             deleteAllUserCategories()
             deleteAllParentCategories()
             deleteAllAssetGroups()

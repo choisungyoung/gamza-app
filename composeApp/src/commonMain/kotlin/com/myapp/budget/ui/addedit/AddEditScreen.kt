@@ -238,29 +238,6 @@ fun AddEditScreen(
         )
     }
 
-    // ── Auto Register Dialog ──
-    if (viewModel.showAutoRegisterDialog) {
-        AlertDialog(
-            onDismissRequest = { viewModel.skipAutoRegister() },
-            title = { Text("이전 달 거래 자동 추가", fontWeight = FontWeight.Bold) },
-            text = {
-                Text(
-                    "${viewModel.pendingAutoRegisterCount}개월치 누락된 거래가 있습니다.\n자동으로 추가할까요?"
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = { viewModel.confirmAutoRegister() },
-                    colors = ButtonDefaults.textButtonColors(contentColor = PotatoBrown)
-                ) { Text("추가", fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.skipAutoRegister() }) { Text("건너뛰기") }
-            },
-            shape = RoundedCornerShape(20.dp)
-        )
-    }
-
     // ── Error Dialog ──
     if (errorDialogMessage != null) {
         AlertDialog(
@@ -292,25 +269,6 @@ fun AddEditScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("취소") }
-            },
-            shape = RoundedCornerShape(20.dp)
-        )
-    }
-
-    // ── 고정지출 해제 확인 다이얼로그 ──
-    if (viewModel.showRemoveFixedDialog) {
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissRemoveFixedDialog() },
-            title = { Text("고정지출 해제", fontWeight = FontWeight.Bold) },
-            text = { Text("이번달부터 고정지출에서 제외하시겠습니까?") },
-            confirmButton = {
-                TextButton(
-                    onClick = { viewModel.confirmRemoveFixed() },
-                    colors = ButtonDefaults.textButtonColors(contentColor = ExpenseColor)
-                ) { Text("제외", fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.dismissRemoveFixedDialog() }) { Text("취소") }
             },
             shape = RoundedCornerShape(20.dp)
         )

@@ -1,19 +1,19 @@
 CREATE TABLE TransactionEntity (
-    id               INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    title            TEXT    NOT NULL,
-    amount           INTEGER NOT NULL,
-    type             TEXT    NOT NULL,
-    category         TEXT    NOT NULL,
-    category_emoji   TEXT    NOT NULL DEFAULT '',
-    date             TEXT    NOT NULL,
-    time             TEXT    NOT NULL DEFAULT '00:00:00',
-    note             TEXT    NOT NULL DEFAULT '',
-    asset            TEXT    NOT NULL DEFAULT '',
-    to_asset         TEXT    NOT NULL DEFAULT '',
-    fixed_expense_id INTEGER,
-    book_id          TEXT    NOT NULL DEFAULT '',
-    created_by       TEXT    NOT NULL DEFAULT '',
-    remote_id        TEXT    NOT NULL DEFAULT ''
+    id             INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    title          TEXT    NOT NULL,
+    amount         INTEGER NOT NULL,
+    type           TEXT    NOT NULL,
+    category       TEXT    NOT NULL,
+    category_emoji TEXT    NOT NULL DEFAULT '',
+    date           TEXT    NOT NULL,
+    time           TEXT    NOT NULL DEFAULT '00:00:00',
+    note           TEXT    NOT NULL DEFAULT '',
+    asset          TEXT    NOT NULL DEFAULT '',
+    to_asset       TEXT    NOT NULL DEFAULT '',
+    is_fixed       INTEGER NOT NULL DEFAULT 0,
+    book_id        TEXT    NOT NULL DEFAULT '',
+    created_by     TEXT    NOT NULL DEFAULT '',
+    remote_id      TEXT    NOT NULL DEFAULT ''
 );
 
 selectAll:
@@ -25,26 +25,23 @@ SELECT * FROM TransactionEntity WHERE book_id = ? ORDER BY date DESC, time DESC;
 selectById:
 SELECT * FROM TransactionEntity WHERE id = ?;
 
-selectByFixedExpenseId:
-SELECT * FROM TransactionEntity WHERE fixed_expense_id = ?;
-
-countByFixedExpenseId:
-SELECT COUNT(*) FROM TransactionEntity WHERE fixed_expense_id = ?;
+selectFixedTransactionsByBookId:
+SELECT * FROM TransactionEntity WHERE book_id = ? AND is_fixed = 1 ORDER BY date DESC, id DESC;
 
 insert:
-INSERT INTO TransactionEntity (title, amount, type, category, category_emoji, date, time, note, asset, to_asset, fixed_expense_id)
+INSERT INTO TransactionEntity (title, amount, type, category, category_emoji, date, time, note, asset, to_asset, is_fixed)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 insertWithBook:
-INSERT INTO TransactionEntity (title, amount, type, category, category_emoji, date, time, note, asset, to_asset, fixed_expense_id, book_id)
+INSERT INTO TransactionEntity (title, amount, type, category, category_emoji, date, time, note, asset, to_asset, is_fixed, book_id)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 insertWithCreator:
-INSERT INTO TransactionEntity (title, amount, type, category, category_emoji, date, time, note, asset, to_asset, fixed_expense_id, created_by)
+INSERT INTO TransactionEntity (title, amount, type, category, category_emoji, date, time, note, asset, to_asset, is_fixed, created_by)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 insertWithBookAndCreator:
-INSERT INTO TransactionEntity (title, amount, type, category, category_emoji, date, time, note, asset, to_asset, fixed_expense_id, book_id, created_by)
+INSERT INTO TransactionEntity (title, amount, type, category, category_emoji, date, time, note, asset, to_asset, is_fixed, book_id, created_by)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 countOfflineTransactions:
@@ -52,72 +49,14 @@ SELECT COUNT(*) FROM TransactionEntity WHERE book_id = '';
 
 update:
 UPDATE TransactionEntity
-SET title = ?, amount = ?, type = ?, category = ?, category_emoji = ?, date = ?, time = ?, note = ?, asset = ?, to_asset = ?, fixed_expense_id = ?
+SET title = ?, amount = ?, type = ?, category = ?, category_emoji = ?, date = ?, time = ?, note = ?, asset = ?, to_asset = ?, is_fixed = ?
 WHERE id = ?;
 
 deleteById:
 DELETE FROM TransactionEntity WHERE id = ?;
 
-detachFixedExpense:
-UPDATE TransactionEntity SET fixed_expense_id = NULL WHERE fixed_expense_id = ?;
-
-deleteByFixedExpenseId:
-DELETE FROM TransactionEntity WHERE fixed_expense_id = ?;
-
 lastInsertRowId:
 SELECT last_insert_rowid();
-
-CREATE TABLE FixedExpenseEntity (
-    id           INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-    title        TEXT    NOT NULL,
-    amount       INTEGER NOT NULL,
-    category     TEXT    NOT NULL,
-    asset        TEXT    NOT NULL DEFAULT '',
-    day_of_month INTEGER NOT NULL DEFAULT 1,
-    start_year   INTEGER NOT NULL,
-    start_month  INTEGER NOT NULL,
-    note         TEXT    NOT NULL DEFAULT '',
-    book_id      TEXT    NOT NULL DEFAULT '',
-    remote_id    TEXT    NOT NULL DEFAULT ''
-);
-
-selectAllFixedExpenses:
-SELECT * FROM FixedExpenseEntity ORDER BY id ASC;
-
-selectAllFixedExpensesIncludingInactive:
-SELECT * FROM FixedExpenseEntity ORDER BY id ASC;
-
-selectFixedExpensesByBookId:
-SELECT * FROM FixedExpenseEntity WHERE book_id = ? ORDER BY id ASC;
-
-selectAllFixedExpensesIncludingInactiveByBookId:
-SELECT * FROM FixedExpenseEntity WHERE book_id = ? ORDER BY id ASC;
-
-insertFixedExpense:
-INSERT INTO FixedExpenseEntity (title, amount, category, asset, day_of_month, start_year, start_month, note)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-
-insertFixedExpenseWithBook:
-INSERT INTO FixedExpenseEntity (title, amount, category, asset, day_of_month, start_year, start_month, note, book_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-
-updateFixedExpense:
-UPDATE FixedExpenseEntity
-SET title = ?, amount = ?, day_of_month = ?, note = ?
-WHERE id = ?;
-
-selectFixedExpenseById:
-SELECT * FROM FixedExpenseEntity WHERE id = ?;
-
-deleteFixedExpense:
-DELETE FROM FixedExpenseEntity WHERE id = ?;
-
-lastFixedExpenseRowId:
-SELECT last_insert_rowid();
-
-detachFixedExpenseFromDate:
-UPDATE TransactionEntity SET fixed_expense_id = NULL
-WHERE fixed_expense_id = ? AND date >= ?;
 
 CREATE TABLE UserCategoryEntity (
     id         INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -366,9 +305,6 @@ UPDATE SyncQueueEntity SET retry_count = retry_count + 1 WHERE id = ?;
 backfillBookId:
 UPDATE TransactionEntity SET book_id = ? WHERE book_id = '';
 
-backfillFixedExpenseBookId:
-UPDATE FixedExpenseEntity SET book_id = ? WHERE book_id = '';
-
 backfillCategoryBookId:
 UPDATE UserCategoryEntity SET book_id = ? WHERE book_id = '';
 
@@ -385,9 +321,6 @@ UPDATE AssetEntity SET book_id = ? WHERE book_id = '';
 
 deleteTransactionsByBookId:
 DELETE FROM TransactionEntity WHERE book_id = ?;
-
-deleteFixedExpensesByBookId:
-DELETE FROM FixedExpenseEntity WHERE book_id = ?;
 
 deleteUserCategoriesByBookId:
 DELETE FROM UserCategoryEntity WHERE book_id = ?;
@@ -411,15 +344,6 @@ SELECT remote_id FROM TransactionEntity WHERE id = ?;
 
 selectTransactionIdByRemoteId:
 SELECT id FROM TransactionEntity WHERE remote_id = ?;
-
-updateFixedExpenseRemoteId:
-UPDATE FixedExpenseEntity SET remote_id = ? WHERE id = ?;
-
-selectFixedExpenseRemoteId:
-SELECT remote_id FROM FixedExpenseEntity WHERE id = ?;
-
-selectFixedExpenseIdByRemoteId:
-SELECT id FROM FixedExpenseEntity WHERE remote_id = ?;
 
 updateParentCategoryRemoteId:
 UPDATE ParentCategoryEntity SET remote_id = ? WHERE id = ?;
@@ -473,17 +397,10 @@ INSERT INTO AssetGroupEntity (name, emoji, key, sort_order, is_liability, book_i
 insertAssetWithBook:
 INSERT INTO AssetEntity (name, emoji, owner, initial_balance, group_key, sort_order, book_id) VALUES (?, ?, ?, ?, ?, ?, ?);
 
-insertFixedExpenseWithBookFull:
-INSERT INTO FixedExpenseEntity (title, amount, category, asset, day_of_month, start_year, start_month, note, book_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-
 -- ── 전체 데이터 삭제 ─────────────────────────────────────────────────────────
 
 deleteAllTransactions:
 DELETE FROM TransactionEntity;
-
-deleteAllFixedExpenses:
-DELETE FROM FixedExpenseEntity;
 
 deleteAllUserCategories:
 DELETE FROM UserCategoryEntity;
@@ -510,9 +427,6 @@ DELETE FROM SyncQueueEntity;
 
 deleteTransactionsForSharedBooks:
 DELETE FROM TransactionEntity WHERE book_id IN (SELECT id FROM BookEntity WHERE owner_id != :ownerId);
-
-deleteFixedExpensesForSharedBooks:
-DELETE FROM FixedExpenseEntity WHERE book_id IN (SELECT id FROM BookEntity WHERE owner_id != :ownerId);
 
 deleteUserCategoriesForSharedBooks:
 DELETE FROM UserCategoryEntity WHERE book_id IN (SELECT id FROM BookEntity WHERE owner_id != :ownerId);

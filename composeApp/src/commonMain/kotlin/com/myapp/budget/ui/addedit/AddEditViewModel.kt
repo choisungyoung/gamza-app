@@ -5,13 +5,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.myapp.budget.domain.model.FixedExpense
 import com.myapp.budget.domain.model.ParentCategory
 import com.myapp.budget.domain.model.Transaction
 import com.myapp.budget.domain.model.TransactionType
 import com.myapp.budget.domain.model.UserCategory
 import com.myapp.budget.domain.repository.CategoryRepository
-import com.myapp.budget.domain.repository.FixedExpenseRepository
 import com.myapp.budget.domain.repository.TransactionRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,7 +34,6 @@ import kotlinx.datetime.todayIn
 class AddEditViewModel(
     private val repository: TransactionRepository,
     private val categoryRepository: CategoryRepository,
-    private val fixedExpenseRepository: FixedExpenseRepository
 ) : ViewModel() {
 
     var title by mutableStateOf("")
@@ -49,20 +46,6 @@ class AddEditViewModel(
     var date by mutableStateOf(Clock.System.todayIn(TimeZone.currentSystemDefault()))
     var time by mutableStateOf(Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).time.let { LocalTime(it.hour, it.minute) })
     var saveAsFixed by mutableStateOf(false)
-
-    var showAutoRegisterDialog by mutableStateOf(false)
-        private set
-    var pendingAutoRegisterCount by mutableStateOf(0)
-        private set
-    private var onSuccessCallback: (() -> Unit)? = null
-
-    // 기존 거래의 고정지출 ID (수정 모드)
-    private var loadedFixedExpenseId: Long? = null
-    private var loadedFixedExpenseRemoteId: String = ""
-
-    // Y→N 확인 다이얼로그
-    var showRemoveFixedDialog by mutableStateOf(false)
-        private set
 
     var transactionType by mutableStateOf(TransactionType.EXPENSE)
         private set
@@ -103,8 +86,6 @@ class AddEditViewModel(
         toAsset = ""
         errorMessage = null
         saveAsFixed = false
-        loadedFixedExpenseId = null
-        loadedFixedExpenseRemoteId = ""
         date = Clock.System.todayIn(TimeZone.currentSystemDefault())
         time = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).time.let { LocalTime(it.hour, it.minute) }
         transactionType = TransactionType.EXPENSE
@@ -126,11 +107,7 @@ class AddEditViewModel(
                     selectedAsset = transaction.asset
                     toAsset = transaction.toAsset
                     time = transaction.time
-                    loadedFixedExpenseId = transaction.fixedExpenseId
-                    saveAsFixed = transaction.fixedExpenseId != null
-                    loadedFixedExpenseRemoteId = transaction.fixedExpenseId?.let {
-                        fixedExpenseRepository.getRemoteId(it)
-                    } ?: ""
+                    saveAsFixed = transaction.isFixed
 
                     val parts = transaction.category.split("/", limit = 2)
                     val parentName = parts[0]
@@ -196,39 +173,8 @@ class AddEditViewModel(
     fun previousDay() { date = date.minus(DatePeriod(days = 1)) }
     fun nextDay() { date = date.plus(DatePeriod(days = 1)) }
 
-    /**
-     * 고정지출 토글 핸들러
-     * - Y→N: 확인 다이얼로그 표시
-     * - N→Y: 즉시 적용
-     */
     fun onFixedExpenseToggled(newValue: Boolean) {
-        if (saveAsFixed && !newValue && loadedFixedExpenseId != null) {
-            // 기존 고정지출을 해제하려는 경우 → 확인 팝업
-            showRemoveFixedDialog = true
-        } else {
-            saveAsFixed = newValue
-        }
-    }
-
-    /** Y→N 확인: 고정지출 규칙 삭제 (이번달 이후 거래는 연결 해제) */
-    fun confirmRemoveFixed() {
-        val feId = loadedFixedExpenseId ?: return
-        val feRemoteId = loadedFixedExpenseRemoteId
-        viewModelScope.launch {
-            // 이번달 1일 이후 거래의 고정지출 연결 해제 (로컬)
-            val firstOfMonth = LocalDate(date.year, date.monthNumber, 1).toString()
-            fixedExpenseRepository.detachFromDate(feId, firstOfMonth)
-            // 고정지출 규칙 실제 삭제 (Supabase + 로컬)
-            runCatching { fixedExpenseRepository.delete(feId, feRemoteId) }
-            loadedFixedExpenseId = null
-            loadedFixedExpenseRemoteId = ""
-            saveAsFixed = false
-            showRemoveFixedDialog = false
-        }
-    }
-
-    fun dismissRemoveFixedDialog() {
-        showRemoveFixedDialog = false
+        saveAsFixed = newValue
     }
 
     fun save(onSuccess: () -> Unit) {
@@ -258,42 +204,6 @@ class AddEditViewModel(
                     "${selectedParent!!.name}/${selectedSubcategory!!.name}"
                 }
 
-                val fixedExpenseId: Long? = when {
-                    // 신규 거래 + 고정지출 등록
-                    saveAsFixed && transactionType == TransactionType.EXPENSE && editingId == null -> {
-                        fixedExpenseRepository.insert(
-                            FixedExpense(
-                                title = title.trim(),
-                                amount = amount,
-                                category = categoryStr,
-                                asset = selectedAsset,
-                                dayOfMonth = date.dayOfMonth,
-                                startYear = date.year,
-                                startMonth = date.monthNumber,
-                                note = note.trim()
-                            )
-                        )
-                    }
-                    // 수정 모드 + N→Y (새로 고정지출 등록)
-                    saveAsFixed && editingId != null && loadedFixedExpenseId == null -> {
-                        fixedExpenseRepository.insert(
-                            FixedExpense(
-                                title = title.trim(),
-                                amount = amount,
-                                category = categoryStr,
-                                asset = selectedAsset,
-                                dayOfMonth = date.dayOfMonth,
-                                startYear = date.year,
-                                startMonth = date.monthNumber,
-                                note = note.trim()
-                            )
-                        )
-                    }
-                    // 수정 모드 + 기존 고정지출 유지
-                    editingId != null && loadedFixedExpenseId != null -> loadedFixedExpenseId
-                    else -> null
-                }
-
                 val transaction = Transaction(
                     id = editingId ?: 0,
                     title = title.trim(),
@@ -306,57 +216,15 @@ class AddEditViewModel(
                     note = note.trim(),
                     asset = selectedAsset,
                     toAsset = toAsset,
-                    fixedExpenseId = fixedExpenseId
+                    isFixed = saveAsFixed && transactionType == TransactionType.EXPENSE
                 )
-                if (editingId != null) repository.update(transaction)
-                else repository.insert(transaction)
-
-                if (fixedExpenseId != null) {
-                    val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
-                    val pending = countPendingMonths(date.year, date.monthNumber, today)
-                    if (pending > 0) {
-                        pendingAutoRegisterCount = pending
-                        onSuccessCallback = onSuccess
-                        showAutoRegisterDialog = true
-                    } else {
-                        onSuccess()
-                    }
-                } else {
-                    onSuccess()
-                }
+                if (editingId != null) repository.update(transaction) else repository.insert(transaction)
+                onSuccess()
             }.onFailure { e ->
                 errorMessage = e.message ?: "저장에 실패했습니다. 네트워크 연결을 확인해주세요."
             }
             isLoading = false
         }
-    }
-
-    fun confirmAutoRegister() {
-        viewModelScope.launch {
-            val today = Clock.System.todayIn(TimeZone.currentSystemDefault())
-            fixedExpenseRepository.autoRegisterPending(today)
-            showAutoRegisterDialog = false
-            onSuccessCallback?.invoke()
-            onSuccessCallback = null
-        }
-    }
-
-    fun skipAutoRegister() {
-        showAutoRegisterDialog = false
-        onSuccessCallback?.invoke()
-        onSuccessCallback = null
-    }
-
-    private fun countPendingMonths(startYear: Int, startMonth: Int, today: LocalDate): Int {
-        var count = 0
-        var year = startYear
-        var month = startMonth + 1
-        if (month > 12) { year++; month = 1 }
-        while (year < today.year || (year == today.year && month <= today.monthNumber)) {
-            count++
-            if (month == 12) { year++; month = 1 } else month++
-        }
-        return count
     }
 
     fun delete(onSuccess: () -> Unit) {

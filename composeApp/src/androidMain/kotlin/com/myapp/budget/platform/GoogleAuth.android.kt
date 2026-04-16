@@ -23,7 +23,7 @@ actual fun GoogleSignInButton(
             when (result) {
                 is NativeSignInResult.Success -> onSuccess()
                 is NativeSignInResult.Error -> onError(result.message)
-                is NativeSignInResult.ClosedByUser -> {}
+                is NativeSignInResult.ClosedByUser -> onError("Google 로그인을 사용할 수 없습니다. Google 계정 설정을 확인해주세요.")
                 is NativeSignInResult.NetworkError -> onError("네트워크 오류가 발생했습니다.")
             }
         }

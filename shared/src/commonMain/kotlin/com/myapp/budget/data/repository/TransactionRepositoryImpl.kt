@@ -38,15 +38,21 @@ class TransactionRepositoryImpl(
             }
         }.map { list -> list.map { it.toModel() } }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    override fun getAllFixed(): Flow<List<Transaction>> =
+        sessionManager.activeBook.flatMapLatest { book ->
+            val bookId = book?.id ?: ""
+            if (bookId.isNotBlank()) {
+                queries.selectFixedTransactionsByBookId(bookId).asFlow().mapToList(Dispatchers.Default)
+            } else {
+                flowOf(emptyList())
+            }
+        }.map { list -> list.map { it.toModel() } }
+
     override suspend fun insert(transaction: Transaction) {
         val bookId = sessionManager.activeBookId
             ?: error("활성화된 가계부가 없습니다. 로그인이 필요합니다.")
         val createdBy = sessionManager.currentUser.value?.id ?: ""
-
-        // fixed_expense_id를 로컬 ID → Supabase remote UUID로 변환
-        val feRemoteId = transaction.fixedExpenseId?.let { localFeId ->
-            queries.selectFixedExpenseRemoteId(localFeId).executeAsOneOrNull()?.takeIf { it.isNotBlank() }
-        }
 
         // 서버에 먼저 저장
         val dto = supabase.postgrest.from("transactions").insert(
@@ -57,7 +63,7 @@ class TransactionRepositoryImpl(
                 time = transaction.time.toString(), note = transaction.note,
                 asset = transaction.asset, toAsset = transaction.toAsset,
                 createdBy = createdBy, categoryEmoji = transaction.categoryEmoji,
-                fixedExpenseId = feRemoteId
+                isFixed = transaction.isFixed
             )
         ) { select() }.decodeSingle<TransactionRemoteDto>()
 
@@ -72,7 +78,7 @@ class TransactionRepositoryImpl(
             category_emoji = transaction.categoryEmoji, date = transaction.date.toString(),
             time = transaction.time.toString(), note = transaction.note,
             asset = transaction.asset, to_asset = transaction.toAsset,
-            fixed_expense_id = transaction.fixedExpenseId,
+            is_fixed = if (transaction.isFixed) 1L else 0L,
             book_id = bookId, created_by = createdBy,
         )
         val localId = queries.lastInsertRowId().executeAsOne()
@@ -89,7 +95,7 @@ class TransactionRepositoryImpl(
             category_emoji = transaction.categoryEmoji, date = transaction.date.toString(),
             time = transaction.time.toString(), note = transaction.note,
             asset = transaction.asset, to_asset = transaction.toAsset,
-            fixed_expense_id = transaction.fixedExpenseId, id = transaction.id
+            is_fixed = if (transaction.isFixed) 1L else 0L, id = transaction.id
         )
 
         val remoteId = queries.selectTransactionRemoteId(transaction.id).executeAsOneOrNull()
@@ -99,7 +105,7 @@ class TransactionRepositoryImpl(
                 set("type", transaction.type.name); set("category", transaction.category)
                 set("date", transaction.date.toString()); set("tx_time", transaction.time.toString())
                 set("note", transaction.note); set("asset", transaction.asset)
-                set("to_asset", transaction.toAsset)
+                set("to_asset", transaction.toAsset); set("is_fixed", transaction.isFixed)
             }) { filter { eq("id", remoteId) } }
         } else {
             // remote_id 없는 레거시 레코드 → 서버에 새로 INSERT
@@ -111,6 +117,7 @@ class TransactionRepositoryImpl(
                     time = transaction.time.toString(), note = transaction.note,
                     asset = transaction.asset, toAsset = transaction.toAsset,
                     createdBy = createdBy, categoryEmoji = transaction.categoryEmoji,
+                    isFixed = transaction.isFixed,
                 )
             ) { select() }.decodeSingle<TransactionRemoteDto>()
             queries.updateTransactionRemoteId(dto.id, transaction.id)
@@ -128,22 +135,6 @@ class TransactionRepositoryImpl(
     override suspend fun getById(id: Long): Transaction? =
         queries.selectById(id).executeAsOneOrNull()?.toModel()
 
-    override suspend fun getByFixedExpenseId(fixedExpenseId: Long): List<Transaction> =
-        queries.selectByFixedExpenseId(fixedExpenseId).executeAsList().map { it.toModel() }
-
-    override suspend fun detachFixedExpense(fixedExpenseId: Long) {
-        queries.detachFixedExpense(fixedExpenseId)
-    }
-
-    override suspend fun deleteByFixedExpenseId(fixedExpenseId: Long) {
-        queries.deleteByFixedExpenseId(fixedExpenseId)
-    }
-
-    override suspend fun deleteByFixedExpenseRemoteId(feRemoteId: String) {
-        if (feRemoteId.isBlank()) return
-        supabase.postgrest.from("transactions").delete { filter { eq("fixed_expense_id", feRemoteId) } }
-    }
-
     private fun com.myapp.budget.db.TransactionEntity.toModel() = Transaction(
         id = id,
         title = title,
@@ -155,7 +146,7 @@ class TransactionRepositoryImpl(
         note = note,
         asset = asset,
         toAsset = to_asset,
-        fixedExpenseId = fixed_expense_id,
+        isFixed = is_fixed != 0L,
         createdBy = created_by,
         categoryEmoji = category_emoji,
     )

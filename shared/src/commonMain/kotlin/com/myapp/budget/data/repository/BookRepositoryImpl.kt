@@ -2,7 +2,6 @@ package com.myapp.budget.data.repository
 
 import com.myapp.budget.data.remote.AssetGroupRemoteDto
 import com.myapp.budget.data.remote.AssetRemoteDto
-import com.myapp.budget.data.remote.FixedExpenseRemoteDto
 import com.myapp.budget.data.remote.ParentCategoryRemoteDto
 import com.myapp.budget.data.remote.SupabaseClientProvider
 import com.myapp.budget.data.remote.TransactionRemoteDto
@@ -119,7 +118,6 @@ class BookRepositoryImpl(
             // 기존 데이터(book_id = '')를 첫 번째 가계부로 마이그레이션
             // 카테고리는 book_id 필터 없이 전체 조회하므로 backfill 제외
             queries.backfillBookId(created.id)
-            queries.backfillFixedExpenseBookId(created.id)
             queries.backfillAssetGroupBookId(created.id)
             queries.backfillAssetBookId(created.id)
             // 마이그레이션된 데이터를 Supabase에 push → 이후 pullBookData 시 복원 가능
@@ -160,7 +158,6 @@ class BookRepositoryImpl(
     override suspend fun deleteBook(bookId: String) {
         // 로컬 연관 데이터 먼저 삭제
         queries.deleteTransactionsByBookId(bookId)
-        queries.deleteFixedExpensesByBookId(bookId)
         queries.deleteUserCategoriesByBookId(bookId)
         queries.deleteParentCategoriesByBookId(bookId)
         queries.deleteAssetsByBookId(bookId)
@@ -280,7 +277,6 @@ class BookRepositoryImpl(
         }
         // 로컬 연관 데이터 모두 삭제
         queries.deleteTransactionsByBookId(bookId)
-        queries.deleteFixedExpensesByBookId(bookId)
         queries.deleteUserCategoriesByBookId(bookId)
         queries.deleteParentCategoriesByBookId(bookId)
         queries.deleteAssetsByBookId(bookId)
@@ -367,34 +363,15 @@ class BookRepositoryImpl(
     // ── 공유 데이터 Push (로컬 → Supabase) ──────────────────────────────────
 
     private suspend fun pushBookData(bookId: String) {
-        // 고정지출 (거래 내역보다 먼저 push해야 remote_id가 확보됨)
-        queries.selectAllFixedExpensesIncludingInactiveByBookId(bookId).executeAsList().forEach { fe ->
-            if (fe.remote_id.isBlank()) {
-                runCatching {
-                    val dto = supabase.postgrest.from("fixed_expenses").insert(
-                        FixedExpenseRemoteDto(bookId = bookId, title = fe.title, amount = fe.amount,
-                            category = fe.category, asset = fe.asset, dayOfMonth = fe.day_of_month.toInt(),
-                            startYear = fe.start_year.toInt(), startMonth = fe.start_month.toInt(),
-                            note = fe.note)
-                    ) { select() }.decodeSingle<FixedExpenseRemoteDto>()
-                    queries.updateFixedExpenseRemoteId(dto.id, fe.id)
-                }
-            }
-        }
-
-        // 거래 내역 (고정지출 push 후 remote_id 참조 가능)
+        // 거래 내역
         queries.selectByBookId(bookId).executeAsList().forEach { t ->
             if (t.remote_id.isBlank()) {
                 runCatching {
-                    val feRemoteId = t.fixed_expense_id?.let { feId ->
-                        queries.selectFixedExpenseRemoteId(feId).executeAsOneOrNull()
-                            ?.takeIf { it.isNotBlank() }
-                    }
                     val dto = supabase.postgrest.from("transactions").insert(
                         TransactionRemoteDto(bookId = bookId, title = t.title, amount = t.amount,
                             type = t.type, category = t.category, date = t.date, time = t.time,
                             note = t.note, asset = t.asset, toAsset = t.to_asset, createdBy = t.created_by,
-                            categoryEmoji = t.category_emoji, fixedExpenseId = feRemoteId)
+                            categoryEmoji = t.category_emoji, isFixed = t.is_fixed != 0L)
                     ) { select() }.decodeSingle<TransactionRemoteDto>()
                     queries.updateTransactionRemoteId(dto.id, t.id)
                 }
@@ -477,10 +454,6 @@ class BookRepositoryImpl(
             .select { filter { eq("book_id", bookId) } }
             .decodeList<AssetRemoteDto>()
 
-        val fixedExpenses = supabase.postgrest.from("fixed_expenses")
-            .select { filter { eq("book_id", bookId) } }
-            .decodeList<FixedExpenseRemoteDto>()
-
         val transactions = supabase.postgrest.from("transactions")
             .select { filter { eq("book_id", bookId) } }
             .decodeList<TransactionRemoteDto>()
@@ -494,7 +467,6 @@ class BookRepositoryImpl(
         withContext(Dispatchers.Default) {
             database.transaction {
                 if (!skipTransactionSync) queries.deleteTransactionsByBookId(bookId)
-                queries.deleteFixedExpensesByBookId(bookId)
                 queries.deleteUserCategoriesByBookId(bookId)
                 queries.deleteParentCategoriesByBookId(bookId)
                 queries.deleteAssetsByBookId(bookId)
@@ -533,23 +505,11 @@ class BookRepositoryImpl(
                     queries.updateAssetRemoteId(a.id, localId)
                 }
 
-                // 고정지출 (hard delete 방식 → Supabase에 없는 레코드는 로컬에도 없음)
-                fixedExpenses.forEach { fe ->
-                    queries.insertFixedExpenseWithBookFull(fe.title, fe.amount, fe.category, fe.asset,
-                        fe.dayOfMonth.toLong(), fe.startYear.toLong(), fe.startMonth.toLong(),
-                        fe.note, bookId)
-                    val localId = queries.lastInsertRowId().executeAsOne()
-                    queries.updateFixedExpenseRemoteId(fe.id, localId)
-                }
-
                 // 거래 내역 (Supabase 빈 목록이면 로컬 유지)
                 if (!skipTransactionSync) {
                     transactions.forEach { t ->
-                        val localFeId = t.fixedExpenseId?.takeIf { it.isNotBlank() }?.let { feRemoteId ->
-                            queries.selectFixedExpenseIdByRemoteId(feRemoteId).executeAsOneOrNull()
-                        }
                         queries.insertWithBookAndCreator(t.title, t.amount, t.type, t.category, t.categoryEmoji, t.date,
-                            t.time, t.note, t.asset, t.toAsset, localFeId, bookId, t.createdBy)
+                            t.time, t.note, t.asset, t.toAsset, if (t.isFixed) 1L else 0L, bookId, t.createdBy)
                         val localId = queries.lastInsertRowId().executeAsOne()
                         queries.updateTransactionRemoteId(t.id, localId)
                     }
