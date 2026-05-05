@@ -7,16 +7,18 @@ import android.os.Build
 import android.provider.MediaStore
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
+import com.myapp.budget.FilePickerRegistry
+import com.myapp.budget.MainActivity
 import java.io.File
 import kotlinx.coroutines.delay
 
@@ -67,19 +69,22 @@ actual fun rememberFileSaver(): FileSaverState {
 @Composable
 actual fun rememberFilePicker(onPicked: (ByteArray) -> Unit): FilePickerState {
     val context = LocalContext.current
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        try {
-            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            bytes?.let(onPicked)
-        } catch (_: Exception) { }
-    }
-    return remember {
-        FilePickerState {
-            launcher.launch("*/*")
+    val currentOnPicked by rememberUpdatedState(onPicked)
+
+    // DisposableEffect 제거: Activity 백그라운드 전환 시 onDispose가 실행되어
+    // callback이 null로 지워지는 race condition 발생 → startActivityForResult 직전에 설정
+    return FilePickerState {
+        // 파일 피커 열기 직전에 callback 설정 → onActivityResult 시점에는 반드시 non-null
+        FilePickerRegistry.callback = { bytes -> currentOnPicked(bytes) }
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "*/*"
+            addCategory(Intent.CATEGORY_OPENABLE)
         }
+        @Suppress("DEPRECATION")
+        (context as? Activity)?.startActivityForResult(
+            intent,
+            MainActivity.FILE_PICKER_REQUEST_CODE
+        )
     }
 }
 

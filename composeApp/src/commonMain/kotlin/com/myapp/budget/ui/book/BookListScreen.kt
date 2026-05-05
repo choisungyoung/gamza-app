@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -79,6 +81,11 @@ fun BookListScreen(
     var showJoinDialog by remember { mutableStateOf(false) }
     var inviteCodeInput by remember { mutableStateOf("") }
 
+    // 화면 진입 시 서버 멤버십 동기화 (강퇴/삭제된 가계부 즉시 반영)
+    LaunchedEffect(Unit) {
+        viewModel.syncBooksFromServer()
+    }
+
     LaunchedEffect(uiState.joinedBook) {
         if (uiState.joinedBook != null) {
             showJoinDialog = false
@@ -86,6 +93,25 @@ fun BookListScreen(
             viewModel.clearState()
             onBookSelected()
         }
+    }
+
+    // sync 완료 후 네비게이션 (import 중 DB 충돌 방지)
+    LaunchedEffect(uiState.bookSelected) {
+        if (uiState.bookSelected) {
+            viewModel.clearState()
+            onBookSelected()
+        }
+    }
+
+    uiState.revokedBookName?.let { bookName ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearRevokedBookName() },
+            title = { Text("가계부 접근 불가") },
+            text = { Text("'$bookName' 가계부에서 접근이 취소되었습니다.") },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearRevokedBookName() }) { Text("확인") }
+            },
+        )
     }
 
     uiState.error?.let { errorMessage ->
@@ -152,6 +178,7 @@ fun BookListScreen(
         )
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -206,7 +233,7 @@ fun BookListScreen(
                         ownerName = ownerName,
                         onClick = {
                             viewModel.selectBook(book)
-                            onBookSelected()
+                            // sync 완료 후 LaunchedEffect(uiState.bookSelected)에서 navigate
                         },
                         onSettingsClick = { onNavigateToSettings(book.id) },
                     )
@@ -214,6 +241,19 @@ fun BookListScreen(
             }
         }
     }
+
+    // 가계부 전환 중 로딩 오버레이 (sync 완료까지 interaction 차단)
+    if (uiState.isLoading) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.3f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator(color = Color.White)
+        }
+    }
+    } // Box
 }
 
 @Composable

@@ -9,4 +9,5 @@ interface AuthRepository {
     suspend fun signUp(email: String, password: String, displayName: String)
     suspend fun signIn(email: String, password: String)
     suspend fun signOut()
+    suspend fun registerFcmToken(token: String)
 }

@@ -42,11 +42,17 @@ class TransactionListViewModel(
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
+    private val _syncError = MutableStateFlow<String?>(null)
+    val syncError: StateFlow<String?> = _syncError.asStateFlow()
+
+    fun clearSyncError() { _syncError.value = null }
+
     fun refresh() {
         val bookId = sessionManager.activeBookId ?: return
         viewModelScope.launch {
             _isRefreshing.value = true
             runCatching { bookRepository.syncBookData(bookId) }
+                .onFailure { _syncError.value = it.message ?: "새로고침 실패" }
             _isRefreshing.value = false
         }
     }

@@ -164,7 +164,9 @@ class BookRepositoryImpl(
         queries.deleteAssetGroupsByBookId(bookId)
         queries.deleteBookMembers(bookId)
         queries.deleteBook(bookId)
-        // Supabase: books ON DELETE CASCADE로 연관 테이블 자동 삭제
+        // book_members를 직접 DELETE해야 notify-kick 웹훅이 발동됨
+        // CASCADE DELETE는 웹훅을 트리거하지 않으므로 books 삭제 전에 먼저 처리
+        supabase.postgrest.from("book_members").delete { filter { eq("book_id", bookId) } }
         supabase.postgrest.from("books").delete { filter { eq("id", bookId) } }
     }
 
@@ -275,7 +277,10 @@ class BookRepositoryImpl(
                 eq("user_id", userId)
             }
         }
-        // 로컬 연관 데이터 모두 삭제
+        return removeBookLocally(bookId)
+    }
+
+    override suspend fun removeBookLocally(bookId: String): Book? {
         queries.deleteTransactionsByBookId(bookId)
         queries.deleteUserCategoriesByBookId(bookId)
         queries.deleteParentCategoriesByBookId(bookId)
@@ -283,7 +288,6 @@ class BookRepositoryImpl(
         queries.deleteAssetGroupsByBookId(bookId)
         queries.deleteBookMembers(bookId)
         queries.deleteBook(bookId)
-        // 남은 가계부 중 첫 번째를 선택
         val nextBook = queries.selectAllBooks().executeAsList().firstOrNull()
         if (nextBook != null) queries.setSelectedBook(nextBook.id)
         return nextBook?.toBook()
@@ -308,6 +312,20 @@ class BookRepositoryImpl(
         }
     }
 
+    override suspend fun getCurrentUserRole(bookId: String): MemberRole? {
+        val userId = supabase.auth.currentUserOrNull()?.id ?: return null
+        return try {
+            val dto = supabase.postgrest.from("book_members")
+                .select { filter { eq("book_id", bookId); eq("user_id", userId) } }
+                .decodeSingle<BookMemberDto>()
+            queries.upsertBookMember(dto.id, dto.bookId, dto.userId, dto.role, dto.joinedAt)
+            MemberRole.valueOf(dto.role)
+        } catch (e: Exception) {
+            val localRole = queries.selectMemberRoleByBookAndUser(bookId, userId).executeAsOneOrNull()
+            localRole?.let { runCatching { MemberRole.valueOf(it) }.getOrNull() }
+        }
+    }
+
     // ── 동기화 ──────────────────────────────────────────────────────────────
 
     override suspend fun syncBookData(bookId: String) {
@@ -326,22 +344,41 @@ class BookRepositoryImpl(
                 )
             }
         }
+        // pull을 먼저 실행 (Supabase의 최신 상태 반영 — 삭제 포함)
+        // → pullBookData는 remote_id가 있는(동기화된) 항목만 삭제하므로 로컬 전용 항목 보존
+        // push는 pull 이후 실행 → Supabase에 없는 로컬 전용 항목만 올림
         pullBookData(bookId)
+        runCatching { pushBookData(bookId) }
     }
 
-    override suspend fun syncBooks() {
-        val userId = supabase.auth.currentUserOrNull()?.id ?: return
+    override suspend fun syncBooks(): List<Book> {
+        val userId = supabase.auth.currentUserOrNull()?.id ?: return emptyList()
         val memberRows = supabase.postgrest.from("book_members")
             .select { filter { eq("user_id", userId) } }
             .decodeList<BookMemberDto>()
 
-        val bookIds = memberRows.map { it.bookId }
-        if (bookIds.isEmpty()) return
+        val serverBookIds = memberRows.map { it.bookId }.toSet()
+
+        // 서버에 더 이상 없는 로컬 가계부(강퇴·삭제) 정리
+        val localBooks = queries.selectAllBooks().executeAsList()
+        val removedBooks = mutableListOf<Book>()
+        localBooks.filter { it.id !in serverBookIds }.forEach { stale ->
+            removedBooks.add(stale.toBook())
+            queries.deleteTransactionsByBookId(stale.id)
+            queries.deleteUserCategoriesByBookId(stale.id)
+            queries.deleteParentCategoriesByBookId(stale.id)
+            queries.deleteAssetsByBookId(stale.id)
+            queries.deleteAssetGroupsByBookId(stale.id)
+            queries.deleteBookMembers(stale.id)
+            queries.deleteBook(stale.id)
+        }
+
+        if (serverBookIds.isEmpty()) return removedBooks
 
         val books = supabase.postgrest.from("books")
             .select()
             .decodeList<BookDto>()
-            .filter { it.id in bookIds }
+            .filter { it.id in serverBookIds }
 
         val currentSelected = queries.selectSelectedBook().executeAsOneOrNull()
         books.forEach { dto ->
@@ -358,6 +395,8 @@ class BookRepositoryImpl(
         if (queries.selectSelectedBook().executeAsOneOrNull() == null) {
             books.firstOrNull()?.let { queries.setSelectedBook(it.id) }
         }
+
+        return removedBooks
     }
 
     // ── 공유 데이터 Push (로컬 → Supabase) ──────────────────────────────────
@@ -458,17 +497,15 @@ class BookRepositoryImpl(
             .select { filter { eq("book_id", bookId) } }
             .decodeList<TransactionRemoteDto>()
 
-        // 네트워크 오류로 빈 목록 반환 시 로컬 데이터 보호 (거래 내역만 적용)
-        val localTransactionCount = queries.selectByBookId(bookId).executeAsList().size
-        val skipTransactionSync = transactions.isEmpty() && localTransactionCount > 0
-
         // 2단계: 단일 DB 트랜잭션으로 삭제 + 삽입을 원자적으로 처리
         // → SQLDelight Flow가 커밋 시점에 딱 1번만 방출되어 화면 깜빡임 방지
         withContext(Dispatchers.Default) {
             database.transaction {
-                if (!skipTransactionSync) queries.deleteTransactionsByBookId(bookId)
-                queries.deleteUserCategoriesByBookId(bookId)
-                queries.deleteParentCategoriesByBookId(bookId)
+                // remote_id가 있는(Supabase 동기화된) 항목만 삭제
+                // → remote_id = '' 인 로컬 전용 항목(오프라인 생성, import 등)은 보존
+                queries.deleteSyncedTransactionsByBookId(bookId)
+                queries.deleteSyncedUserCategoriesByBookId(bookId)
+                queries.deleteSyncedParentCategoriesByBookId(bookId)
                 queries.deleteAssetsByBookId(bookId)
                 queries.deleteAssetGroupsByBookId(bookId)
 
@@ -505,14 +542,11 @@ class BookRepositoryImpl(
                     queries.updateAssetRemoteId(a.id, localId)
                 }
 
-                // 거래 내역 (Supabase 빈 목록이면 로컬 유지)
-                if (!skipTransactionSync) {
-                    transactions.forEach { t ->
-                        queries.insertWithBookAndCreator(t.title, t.amount, t.type, t.category, t.categoryEmoji, t.date,
-                            t.time, t.note, t.asset, t.toAsset, if (t.isFixed) 1L else 0L, bookId, t.createdBy)
-                        val localId = queries.lastInsertRowId().executeAsOne()
-                        queries.updateTransactionRemoteId(t.id, localId)
-                    }
+                transactions.forEach { t ->
+                    queries.insertWithBookAndCreator(t.title, t.amount, t.type, t.category, t.categoryEmoji, t.date,
+                        t.time, t.note, t.asset, t.toAsset, if (t.isFixed) 1L else 0L, bookId, t.createdBy)
+                    val localId = queries.lastInsertRowId().executeAsOne()
+                    queries.updateTransactionRemoteId(t.id, localId)
                 }
             }
         }

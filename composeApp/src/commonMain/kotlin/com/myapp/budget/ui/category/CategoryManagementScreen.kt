@@ -211,8 +211,9 @@ fun CategoryManagementScreen(
             title = "${parent.emoji} ${parent.name} — 소분류 추가",
             initialName = "",
             initialEmoji = "",
-            onConfirm = { name, emoji ->
-                viewModel.addSubcategory(name, emoji, parent.id, selectedType)
+            showEmoji = false,
+            onConfirm = { name, _ ->
+                viewModel.addSubcategory(name, parent.id, selectedType)
                 addSubcatParent = null
             },
             onDismiss = { addSubcatParent = null }
@@ -223,10 +224,11 @@ fun CategoryManagementScreen(
         CategoryInputDialog(
             title = "소분류 수정",
             initialName = sub.name,
-            initialEmoji = sub.emoji,
+            initialEmoji = "",
             showDelete = true,
-            onConfirm = { name, emoji ->
-                viewModel.updateSubcategory(sub.id, name, emoji)
+            showEmoji = false,
+            onConfirm = { name, _ ->
+                viewModel.updateSubcategory(sub.id, name)
                 editSubcatTarget = null
             },
             onDelete = {
@@ -588,18 +590,12 @@ private fun ParentCategoryCard(
                                         )
                                     }
 
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
+                                    Text(
+                                        sub.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
                                         modifier = Modifier.weight(1f)
-                                    ) {
-                                        EmojiText(sub.emoji, fontSize = 14.sp)
-                                        Text(
-                                            sub.name,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
+                                    )
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         IconButton(onClick = { onEditSubcat(sub) }, modifier = Modifier.size(32.dp)) {
                                             Icon(Icons.Default.Edit, contentDescription = "수정",
@@ -635,6 +631,7 @@ private fun CategoryInputDialog(
     initialName: String,
     initialEmoji: String,
     showDelete: Boolean = false,
+    showEmoji: Boolean = true,
     onConfirm: (name: String, emoji: String) -> Unit,
     onDelete: (() -> Unit)? = null,
     onDismiss: () -> Unit
@@ -647,18 +644,20 @@ private fun CategoryInputDialog(
         title = { Text(title, fontWeight = FontWeight.Bold, color = PotatoDeep) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = emoji,
-                    onValueChange = { emoji = it },
-                    label = { Text("이모지") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = PotatoBrown,
-                        focusedLabelColor = PotatoBrown
+                if (showEmoji) {
+                    OutlinedTextField(
+                        value = emoji,
+                        onValueChange = { emoji = it },
+                        label = { Text("이모지") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = PotatoBrown,
+                            focusedLabelColor = PotatoBrown
+                        )
                     )
-                )
+                }
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },

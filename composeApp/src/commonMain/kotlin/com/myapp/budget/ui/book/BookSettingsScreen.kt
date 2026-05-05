@@ -69,6 +69,13 @@ fun BookSettingsScreen(
         }
     }
 
+    LaunchedEffect(uiState.deletedBook) {
+        if (uiState.deletedBook) {
+            viewModel.clearState()
+            onBookDeleted()
+        }
+    }
+
     if (showLeaveDialog) {
         AlertDialog(
             onDismissRequest = { showLeaveDialog = false },
@@ -99,7 +106,6 @@ fun BookSettingsScreen(
                     onClick = {
                         viewModel.deleteBook(bookId)
                         showDeleteDialog = false
-                        onBookDeleted()
                     },
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                 ) { Text("삭제") }

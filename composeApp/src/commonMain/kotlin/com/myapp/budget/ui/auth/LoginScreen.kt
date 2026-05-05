@@ -38,7 +38,11 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import gamzaapp.composeapp.generated.resources.Res
+import gamzaapp.composeapp.generated.resources.nanum_gothic
+import org.jetbrains.compose.resources.Font
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -46,6 +50,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.dp
 import com.myapp.budget.platform.GoogleSignInButton
 import com.myapp.budget.ui.components.PotatoCharacter
+import com.myapp.budget.ui.theme.PotatoBrown
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
@@ -53,6 +58,7 @@ fun LoginScreen(
     onNavigateToSignup: () -> Unit,
     onLoginSuccess: () -> Unit,
 ) {
+    val nanumGothic = FontFamily(Font(Res.font.nanum_gothic))
     val viewModel: AuthViewModel = koinViewModel()
     val uiState by viewModel.uiState.collectAsState()
     val focusManager = LocalFocusManager.current
@@ -116,6 +122,8 @@ fun LoginScreen(
                 "감자 가계부",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
+                fontFamily = nanumGothic,
+                color = PotatoBrown,
             )
             Spacer(Modifier.height(16.dp))
 

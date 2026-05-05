@@ -1,6 +1,9 @@
 package com.myapp.budget
 
 import android.app.Application
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Build
 import com.myapp.budget.data.remote.SupabaseClientProvider
 import com.myapp.budget.di.androidModule
 import com.myapp.budget.di.appModule
@@ -19,6 +22,21 @@ class BudgetApp : Application() {
         startKoin {
             androidContext(this@BudgetApp)
             modules(androidModule, sharedModule, appModule)
+        }
+        createNotificationChannels()
+    }
+
+    private fun createNotificationChannels() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                BudgetFcmService.CHANNEL_ID,
+                "가계부 알림",
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                description = "강퇴 및 가계부 삭제 알림"
+            }
+            (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
+                .createNotificationChannel(channel)
         }
     }
 }

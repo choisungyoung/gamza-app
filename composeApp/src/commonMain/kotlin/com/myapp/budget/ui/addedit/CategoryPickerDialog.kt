@@ -87,8 +87,6 @@ fun CategoryPickerDialog(
     // 소분류 추가 다이얼로그
     var showAddSubFor by remember { mutableStateOf<Pair<Long, TransactionType>?>(null) }
     var addSubName by remember { mutableStateOf("") }
-    var addSubEmoji by remember { mutableStateOf("") }
-
     // 대분류 편집 다이얼로그
     var editingParent by remember { mutableStateOf<ParentCategory?>(null) }
     var editParentName by remember { mutableStateOf("") }
@@ -97,41 +95,31 @@ fun CategoryPickerDialog(
     // 소분류 편집 다이얼로그
     var editingSub by remember { mutableStateOf<UserCategory?>(null) }
     var editSubName by remember { mutableStateOf("") }
-    var editSubEmoji by remember { mutableStateOf("") }
 
     // ── 소분류 추가 다이얼로그 ──
     showAddSubFor?.let { (parentId, type) ->
         AlertDialog(
-            onDismissRequest = { showAddSubFor = null; addSubName = ""; addSubEmoji = "" },
+            onDismissRequest = { showAddSubFor = null; addSubName = "" },
             title = { Text("소분류 추가", fontWeight = FontWeight.Bold) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = addSubEmoji, onValueChange = { addSubEmoji = it },
-                        label = { Text("이모지") }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = addSubName, onValueChange = { addSubName = it },
-                        label = { Text("이름") }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                OutlinedTextField(
+                    value = addSubName, onValueChange = { addSubName = it },
+                    label = { Text("이름") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.addSubcategory(addSubName, addSubEmoji, parentId, type)
-                        showAddSubFor = null; addSubName = ""; addSubEmoji = ""
+                        viewModel.addSubcategory(addSubName, parentId, type)
+                        showAddSubFor = null; addSubName = ""
                     },
                     enabled = addSubName.isNotBlank(),
                     colors = ButtonDefaults.textButtonColors(contentColor = PotatoBrown)
                 ) { Text("추가", fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
-                TextButton(onClick = { showAddSubFor = null; addSubName = ""; addSubEmoji = "" }) {
-                    Text("취소")
-                }
+                TextButton(onClick = { showAddSubFor = null; addSubName = "" }) { Text("취소") }
             },
             shape = RoundedCornerShape(20.dp)
         )
@@ -177,23 +165,16 @@ fun CategoryPickerDialog(
             onDismissRequest = { editingSub = null },
             title = { Text("소분류 편집", fontWeight = FontWeight.Bold) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = editSubEmoji, onValueChange = { editSubEmoji = it },
-                        label = { Text("이모지") }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = editSubName, onValueChange = { editSubName = it },
-                        label = { Text("이름") }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                OutlinedTextField(
+                    value = editSubName, onValueChange = { editSubName = it },
+                    label = { Text("이름") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.updateSubcategory(sub.id, editSubName, editSubEmoji)
+                        viewModel.updateSubcategory(sub.id, editSubName)
                         editingSub = null
                     },
                     enabled = editSubName.isNotBlank(),
@@ -320,7 +301,6 @@ fun CategoryPickerDialog(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    EmojiText(sub.emoji, fontSize = 14.sp)
                                     Text(
                                         sub.name,
                                         style = MaterialTheme.typography.bodyMedium,
@@ -333,7 +313,6 @@ fun CategoryPickerDialog(
                                     IconButton(
                                         onClick = {
                                             editSubName = sub.name
-                                            editSubEmoji = sub.emoji
                                             editingSub = sub
                                         },
                                         modifier = Modifier.size(32.dp)
@@ -365,7 +344,6 @@ fun CategoryPickerDialog(
                                         .fillMaxWidth()
                                         .clickable {
                                             addSubName = ""
-                                            addSubEmoji = ""
                                             showAddSubFor = parent.id to transactionType
                                         }
                                         .padding(

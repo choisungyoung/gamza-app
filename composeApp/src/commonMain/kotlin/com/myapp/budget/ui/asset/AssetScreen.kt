@@ -49,6 +49,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.myapp.budget.domain.model.Asset
@@ -66,6 +69,7 @@ import org.koin.compose.viewmodel.koinViewModel
 @Composable
 fun AssetScreen(
     onMenuClick: () -> Unit = {},
+    canWrite: Boolean = true,
     viewModel: AssetViewModel = koinViewModel()
 ) {
     val groups by viewModel.groups.collectAsState()
@@ -73,7 +77,8 @@ fun AssetScreen(
     val totalAssets by viewModel.totalAssets.collectAsState()
     val assetBalances by viewModel.assetBalances.collectAsState()
 
-    var isEditMode by remember { mutableStateOf(false) }
+    var isEditModeInternal by remember { mutableStateOf(false) }
+    val isEditMode = isEditModeInternal && canWrite
 
     // 대분류 편집 다이얼로그
     var editingGroup by remember { mutableStateOf<AssetGroup?>(null) }
@@ -86,7 +91,7 @@ fun AssetScreen(
     var editAssetName by remember { mutableStateOf("") }
     var editAssetEmoji by remember { mutableStateOf("") }
     var editAssetOwner by remember { mutableStateOf("") }
-    var editAssetBalance by remember { mutableStateOf("") }
+    var editAssetBalance by remember { mutableStateOf(TextFieldValue("")) }
 
     // 삭제 확인
     var deletingAsset by remember { mutableStateOf<Asset?>(null) }
@@ -135,7 +140,19 @@ fun AssetScreen(
                         modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(
                         value = editAssetBalance,
-                        onValueChange = { editAssetBalance = it.filter(Char::isDigit) },
+                        onValueChange = { newValue ->
+                            val digits = newValue.text.filter(Char::isDigit)
+                            val formatted = digits.toLongOrNull()?.formatWithCommas() ?: digits
+                            val cursorPos = newValue.selection.end
+                            val digitsBeforeCursor = newValue.text.take(cursorPos).count(Char::isDigit)
+                            var newCursor = formatted.length
+                            var digitCount = 0
+                            for (i in formatted.indices) {
+                                if (digitCount == digitsBeforeCursor) { newCursor = i; break }
+                                if (formatted[i].isDigit()) digitCount++
+                            }
+                            editAssetBalance = TextFieldValue(text = formatted, selection = TextRange(newCursor))
+                        },
                         label = { Text("초기 잔액 (원)") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -146,7 +163,7 @@ fun AssetScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val balance = editAssetBalance.toLongOrNull() ?: 0L
+                        val balance = editAssetBalance.text.filter(Char::isDigit).toLongOrNull() ?: 0L
                         if (editingAsset != null) {
                             viewModel.updateAsset(editingAsset!!.id, editAssetName,
                                 "", editAssetOwner, balance)
@@ -193,12 +210,14 @@ fun AssetScreen(
                     Text("자산", color = Color.White, fontWeight = FontWeight.Bold)
                 },
                 actions = {
-                    TextButton(onClick = { isEditMode = !isEditMode }) {
-                        Text(
-                            if (isEditMode) "완료" else "편집",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
+                    if (canWrite) {
+                        TextButton(onClick = { isEditModeInternal = !isEditModeInternal }) {
+                            Text(
+                                if (isEditMode) "완료" else "편집",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                     IconButton(onClick = onMenuClick) {
                         Icon(Icons.Default.Menu, contentDescription = "메뉴", tint = Color.White)
@@ -208,6 +227,8 @@ fun AssetScreen(
             )
         }
     ) { padding ->
+        val totalAssetCount = assetsMap.values.sumOf { it.size }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -219,6 +240,34 @@ fun AssetScreen(
             item {
                 TotalAssetsCard(totalAssets = totalAssets)
                 Spacer(Modifier.height(8.dp))
+            }
+
+            // ── 자산 없을 때 안내 ──
+            if (totalAssetCount == 0 && groups.isNotEmpty()) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 32.dp, vertical = 32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text("🏦", style = MaterialTheme.typography.displaySmall)
+                        Text(
+                            "아직 자산이 없어요",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = PotatoDeep
+                        )
+                        Text(
+                            "우측 상단 '편집' 버튼을 누르면\n각 그룹에 자산을 추가할 수 있어요.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
             }
 
             // ── 그룹별 자산 목록 ──
@@ -244,10 +293,11 @@ fun AssetScreen(
                         asset = asset,
                         currentBalance = assetBalances[asset.name] ?: asset.initialBalance,
                         isEditMode = isEditMode,
+                        isLiability = group.isLiability,
                         onEdit = {
                             editAssetName = asset.name
                             editAssetOwner = asset.owner
-                            editAssetBalance = asset.initialBalance.toString()
+                            editAssetBalance = TextFieldValue(asset.initialBalance.formatWithCommas())
                             editingAsset = asset
                         },
                         onDelete = { deletingAsset = asset }
@@ -261,7 +311,7 @@ fun AssetScreen(
                                 .fillMaxWidth()
                                 .clickable {
                                     editAssetName = ""
-                                    editAssetOwner = ""; editAssetBalance = ""
+                                    editAssetOwner = ""; editAssetBalance = TextFieldValue("")
                                     addAssetForGroup = group
                                 }
                                 .padding(start = 56.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
@@ -341,8 +391,12 @@ private fun AssetGroupHeader(
             Text(group.name, style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
                 color = PotatoDeep)
-            Text(subtotal.formatAsWon(), style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold, color = PotatoDark)
+            Text(
+                text = (if (group.isLiability) -subtotal else subtotal).formatAsWon(),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (group.isLiability) ExpenseColor else PotatoDark
+            )
             if (isEditMode) {
                 IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Default.Edit, contentDescription = "편집",
@@ -360,6 +414,7 @@ private fun AssetRow(
     asset: Asset,
     currentBalance: Long,
     isEditMode: Boolean,
+    isLiability: Boolean = false,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -381,10 +436,10 @@ private fun AssetRow(
                 }
             }
             Text(
-                text = currentBalance.formatAsWon(),
+                text = (if (isLiability) -currentBalance else currentBalance).formatAsWon(),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = PotatoDark
+                color = if (isLiability) ExpenseColor else PotatoDark
             )
             if (isEditMode) {
                 IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
@@ -403,5 +458,15 @@ private fun AssetRow(
             modifier = Modifier.padding(start = 40.dp),
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
         )
+    }
+}
+
+private fun Long.formatWithCommas(): String {
+    val str = toString()
+    return buildString {
+        str.forEachIndexed { index, c ->
+            if (index > 0 && (str.length - index) % 3 == 0) append(',')
+            append(c)
+        }
     }
 }

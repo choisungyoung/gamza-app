@@ -26,8 +26,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowRight
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -93,6 +91,7 @@ import org.koin.compose.viewmodel.koinViewModel
 fun AddEditScreen(
     transactionId: Long?,
     onBack: () -> Unit,
+    readOnly: Boolean = false,
     viewModel: AddEditViewModel = koinViewModel(key = "add_edit_${transactionId}")
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -105,6 +104,7 @@ fun AddEditScreen(
 
     var titleFieldValue by remember { mutableStateOf(TextFieldValue("")) }
     var noteFieldValue by remember { mutableStateOf(TextFieldValue("")) }
+    var amountFieldValue by remember { mutableStateOf(TextFieldValue("")) }
 
     LaunchedEffect(transactionId) { viewModel.init(transactionId) }
     LaunchedEffect(viewModel.title) {
@@ -114,6 +114,11 @@ fun AddEditScreen(
     LaunchedEffect(viewModel.note) {
         if (viewModel.note != noteFieldValue.text)
             noteFieldValue = TextFieldValue(viewModel.note, TextRange(viewModel.note.length))
+    }
+    LaunchedEffect(viewModel.rawAmount) {
+        val formatted = viewModel.rawAmount.toLongOrNull()?.formatWithCommas() ?: viewModel.rawAmount
+        if (formatted != amountFieldValue.text)
+            amountFieldValue = TextFieldValue(text = formatted, selection = TextRange(formatted.length))
     }
     LaunchedEffect(viewModel.errorMessage) {
         viewModel.errorMessage?.let {
@@ -339,7 +344,11 @@ fun AddEditScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = if (transactionId != null) "거래 수정" else "거래 추가",
+                        text = when {
+                            readOnly -> "거래 조회"
+                            transactionId != null -> "거래 수정"
+                            else -> "거래 추가"
+                        },
                         color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
@@ -368,38 +377,54 @@ fun AddEditScreen(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                if (viewModel.isEditing) {
+                if (readOnly) {
                     Button(
-                        onClick = { showDeleteDialog = true },
+                        onClick = onBack,
                         modifier = Modifier.weight(1f).height(52.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        ),
+                        colors = ButtonDefaults.buttonColors(containerColor = accentColor),
                         shape = RoundedCornerShape(16.dp),
-                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
                     ) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                        Text(
+                            text = "닫기",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold
                         )
-                        Spacer(Modifier.width(4.dp))
-                        Text("삭제", fontWeight = FontWeight.Bold)
                     }
-                }
-                Button(
-                    onClick = { viewModel.save { onBack() } },
-                    modifier = Modifier.weight(1f).height(52.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = accentColor),
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
-                ) {
-                    Text(
-                        text = if (viewModel.isEditing) "수정 완료" else "저장",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Bold
-                    )
+                } else {
+                    if (viewModel.isEditing) {
+                        Button(
+                            onClick = { showDeleteDialog = true },
+                            modifier = Modifier.weight(1f).height(52.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            shape = RoundedCornerShape(16.dp),
+                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("삭제", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Button(
+                        onClick = { viewModel.save { onBack() } },
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = accentColor),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
+                    ) {
+                        Text(
+                            text = if (viewModel.isEditing) "수정 완료" else "저장",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }
@@ -428,19 +453,19 @@ fun AddEditScreen(
                             label = "지출",
                             selected = viewModel.transactionType == TransactionType.EXPENSE,
                             color = ExpenseColor,
-                            onClick = { viewModel.updateType(TransactionType.EXPENSE) }
+                            onClick = { if (!readOnly) viewModel.updateType(TransactionType.EXPENSE) }
                         )
                         TypeChip(
                             label = "수입",
                             selected = viewModel.transactionType == TransactionType.INCOME,
                             color = IncomeColor,
-                            onClick = { viewModel.updateType(TransactionType.INCOME) }
+                            onClick = { if (!readOnly) viewModel.updateType(TransactionType.INCOME) }
                         )
                         TypeChip(
                             label = "이체",
                             selected = viewModel.transactionType == TransactionType.TRANSFER,
                             color = TransferColor,
-                            onClick = { viewModel.updateType(TransactionType.TRANSFER) }
+                            onClick = { if (!readOnly) viewModel.updateType(TransactionType.TRANSFER) }
                         )
                     }
                 }
@@ -448,19 +473,29 @@ fun AddEditScreen(
 
                 // 금액
                 FormRow(label = "금액 (원)") {
-                    val displayAmount = remember(viewModel.rawAmount) {
-                        val formatted = viewModel.rawAmount.toLongOrNull()
-                            ?.formatWithCommas() ?: viewModel.rawAmount
-                        TextFieldValue(text = formatted, selection = TextRange(formatted.length))
-                    }
                     Row(
                         modifier = Modifier.weight(1f),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         BasicTextField(
-                            value = displayAmount,
-                            onValueChange = { viewModel.rawAmount = it.text.filter(Char::isDigit) },
+                            value = amountFieldValue,
+                            readOnly = readOnly,
+                            onValueChange = { newValue ->
+                                if (readOnly) return@BasicTextField
+                                val digits = newValue.text.filter(Char::isDigit)
+                                val formatted = digits.toLongOrNull()?.formatWithCommas() ?: digits
+                                val cursorPos = newValue.selection.end
+                                val digitsBeforeCursor = newValue.text.take(cursorPos).count(Char::isDigit)
+                                var newCursor = formatted.length
+                                var digitCount = 0
+                                for (i in formatted.indices) {
+                                    if (digitCount == digitsBeforeCursor) { newCursor = i; break }
+                                    if (formatted[i].isDigit()) digitCount++
+                                }
+                                amountFieldValue = TextFieldValue(text = formatted, selection = TextRange(newCursor))
+                                viewModel.rawAmount = digits
+                            },
                             textStyle = MaterialTheme.typography.bodyMedium.copy(
                                 color = MaterialTheme.colorScheme.onSurface,
                                 fontWeight = FontWeight.SemiBold
@@ -471,7 +506,7 @@ fun AddEditScreen(
                             modifier = Modifier.weight(1f),
                             decorationBox = { innerTextField ->
                                 Box {
-                                    if (viewModel.rawAmount.isEmpty()) {
+                                    if (amountFieldValue.text.isEmpty()) {
                                         Text(
                                             "0",
                                             style = MaterialTheme.typography.bodyMedium,
@@ -495,7 +530,7 @@ fun AddEditScreen(
                 if (viewModel.transactionType == TransactionType.TRANSFER) {
                     // 이체: 1-depth 카테고리 선택 (다이얼로그 없이 직접 선택)
                     val transferParents by viewModel.transferParents.collectAsState()
-                    FormRow(label = "카테고리", onClick = { showCategoryPicker = true }) {
+                    FormRow(label = "카테고리", onClick = if (readOnly) null else ({ showCategoryPicker = true })) {
                         Text(
                             text = viewModel.selectedParent?.let { "${it.emoji} ${it.name}" } ?: "선택하세요",
                             style = MaterialTheme.typography.bodyMedium,
@@ -521,7 +556,7 @@ fun AddEditScreen(
                     }
                     FormRow(
                         label = "카테고리",
-                        onClick = { showCategoryPicker = true }
+                        onClick = if (readOnly) null else ({ showCategoryPicker = true })
                     ) {
                         Text(
                             text = categoryLabel ?: "선택하세요",
@@ -546,11 +581,14 @@ fun AddEditScreen(
                     InlineTextField(
                         value = titleFieldValue,
                         onValueChange = {
-                            titleFieldValue = it
-                            viewModel.title = it.text
+                            if (!readOnly) {
+                                titleFieldValue = it
+                                viewModel.title = it.text
+                            }
                         },
                         placeholder = "입력하세요",
                         singleLine = true,
+                        readOnly = readOnly,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -566,13 +604,13 @@ fun AddEditScreen(
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier
                             .weight(1f)
-                            .clickable { showDatePicker = true }
+                            .let { if (!readOnly) it.clickable { showDatePicker = true } else it }
                     )
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .clickable { showTimePicker = true }
+                            .let { if (!readOnly) it.clickable { showTimePicker = true } else it }
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
                         Text(
@@ -588,7 +626,7 @@ fun AddEditScreen(
                 // 결제수단 / 입금계좌 / 이체 계좌
                 if (viewModel.transactionType == TransactionType.TRANSFER) {
                     // 출금계좌
-                    FormRow(label = "출금계좌", onClick = { showAssetPicker = true }) {
+                    FormRow(label = "출금계좌", onClick = if (readOnly) null else ({ showAssetPicker = true })) {
                         Text(
                             text = viewModel.selectedAsset.ifEmpty { "선택하세요" },
                             style = MaterialTheme.typography.bodyMedium,
@@ -606,7 +644,7 @@ fun AddEditScreen(
                     }
                     RowDivider()
                     // 입금계좌
-                    FormRow(label = "입금계좌", onClick = { showToAssetPicker = true }) {
+                    FormRow(label = "입금계좌", onClick = if (readOnly) null else ({ showToAssetPicker = true })) {
                         Text(
                             text = viewModel.toAsset.ifEmpty { "선택하세요" },
                             style = MaterialTheme.typography.bodyMedium,
@@ -625,7 +663,7 @@ fun AddEditScreen(
                 } else {
                     val assetLabel = if (viewModel.transactionType == TransactionType.EXPENSE)
                         "결제수단" else "입금계좌"
-                    FormRow(label = assetLabel, onClick = { showAssetPicker = true }) {
+                    FormRow(label = assetLabel, onClick = if (readOnly) null else ({ showAssetPicker = true })) {
                         Text(
                             text = viewModel.selectedAsset.ifEmpty { "선택하세요" },
                             style = MaterialTheme.typography.bodyMedium,
@@ -649,30 +687,18 @@ fun AddEditScreen(
                     InlineTextField(
                         value = noteFieldValue,
                         onValueChange = {
-                            noteFieldValue = it
-                            viewModel.note = it.text
+                            if (!readOnly) {
+                                noteFieldValue = it
+                                viewModel.note = it.text
+                            }
                         },
                         placeholder = "입력하세요",
                         singleLine = false,
+                        readOnly = readOnly,
                         modifier = Modifier.weight(1f)
                     )
                 }
                 RowDivider()
-
-                // 고정 지출 토글 (지출 거래에만 표시)
-                if (viewModel.transactionType == TransactionType.EXPENSE) {
-                    FormRow(label = "고정 지출") {
-                        Switch(
-                            checked = viewModel.saveAsFixed,
-                            onCheckedChange = { viewModel.onFixedExpenseToggled(it) },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = PotatoBrown,
-                                checkedTrackColor = PotatoBrown.copy(alpha = 0.4f)
-                            )
-                        )
-                    }
-                    RowDivider()
-                }
 
                 Spacer(Modifier.height(8.dp))
             }
@@ -755,6 +781,7 @@ private fun InlineTextField(
     onValueChange: (TextFieldValue) -> Unit,
     placeholder: String,
     singleLine: Boolean,
+    readOnly: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier) {
@@ -768,6 +795,7 @@ private fun InlineTextField(
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
+            readOnly = readOnly,
             textStyle = MaterialTheme.typography.bodyMedium.copy(
                 color = MaterialTheme.colorScheme.onSurface
             ),

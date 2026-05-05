@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1045224774058",
+    "project_id": "gamza-2898d",
+    "storage_bucket": "gamza-2898d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1045224774058:android:cb1ddc2c8a096d8e02b3d3",
+        "android_client_info": {
+          "package_name": "com.myapp.budget"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC-GAYJLQMsfSe3DCftJZ1lTkGVUboNiAY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

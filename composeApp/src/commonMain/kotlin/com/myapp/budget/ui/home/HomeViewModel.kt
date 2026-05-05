@@ -38,7 +38,6 @@ data class HomeUiState(
     val isLoading: Boolean = true,
     val summary: MonthlySummary = MonthlySummary(),
     val recentTransactions: List<Transaction> = emptyList(),
-    val fixedExpenseTransactions: List<Transaction> = emptyList(),
     val currentYear: Int = 0,
     val currentMonthNum: Int = 0,
     val currentMonth: String = ""
@@ -128,9 +127,6 @@ class HomeViewModel(
             isLoading = false,
             summary = MonthlySummary(income, expense, income - expense, breakdown),
             recentTransactions = transactions.take(5),
-            fixedExpenseTransactions = thisMonth
-                .filter { it.isFixed }
-                .sortedWith(compareByDescending<Transaction> { it.date }.thenByDescending { it.time }),
             currentYear = year,
             currentMonthNum = month,
             currentMonth = "${year}년 ${month}월"

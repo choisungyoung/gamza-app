@@ -55,6 +55,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,16 +63,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
+import com.myapp.budget.data.remote.RealtimeManager
 import com.myapp.budget.domain.SessionManager
+import com.myapp.budget.domain.model.MemberRole
 import com.myapp.budget.domain.repository.AuthRepository
 import com.myapp.budget.domain.repository.BookRepository
 import com.myapp.budget.domain.model.LocalUser
 import com.myapp.budget.platform.BackPressExitHandler
 import com.myapp.budget.platform.OnBackPressed
+import com.myapp.budget.platform.registerFcmToken
+import com.myapp.budget.push.KickNotificationRegistry
 import com.myapp.budget.ui.addedit.AddEditScreen
 import com.myapp.budget.ui.asset.AssetScreen
 import com.myapp.budget.ui.auth.LoginScreen
@@ -86,7 +92,6 @@ import com.myapp.budget.ui.category.CategoryManagementScreen
 import com.myapp.budget.ui.components.PotatoCharacter
 import com.myapp.budget.ui.datamanagement.DataManagementScreen
 import com.myapp.budget.ui.dbviewer.DbViewerScreen
-import com.myapp.budget.ui.fixedexpense.FixedExpenseScreen
 import com.myapp.budget.ui.splash.SplashScreen
 import com.myapp.budget.ui.home.HomeScreen
 import com.myapp.budget.ui.search.SearchScreen
@@ -98,6 +103,9 @@ import com.myapp.budget.ui.theme.PotatoDark
 import com.myapp.budget.ui.theme.PotatoDeep
 import com.myapp.budget.ui.theme.PotatoLight
 import com.myapp.budget.ui.transactions.TransactionListScreen
+import gamzaapp.composeapp.generated.resources.Res
+import gamzaapp.composeapp.generated.resources.nanum_gothic
+import org.jetbrains.compose.resources.Font
 import org.koin.compose.koinInject
 
 @Stable
@@ -107,11 +115,10 @@ sealed class Screen {
     data object Statistics : Screen()
     data object Assets : Screen()
     data class CategoryManagement(val previousScreen: Screen = Home) : Screen()
-    data class FixedExpenses(val previousScreen: Screen = Home) : Screen()
     data object Search : Screen()
     data class DataManagement(val previousScreen: Screen = Home) : Screen()
     data class DbViewer(val previousScreen: Screen = Home) : Screen()
-    data class AddEdit(val transactionId: Long? = null, val previousScreen: Screen = Home) : Screen()
+    data class AddEdit(val transactionId: Long? = null, val previousScreen: Screen = Home, val readOnly: Boolean = false) : Screen()
 
     // Auth
     data object Login : Screen()
@@ -129,6 +136,7 @@ sealed class Screen {
 @Composable
 fun App() {
     BudgetTheme {
+        val scope = rememberCoroutineScope()
         val authRepository: AuthRepository = koinInject()
         val authUser by authRepository.authStateFlow().collectAsState(initial = null)
         var authResolved by remember { mutableStateOf(false) }
@@ -136,6 +144,7 @@ fun App() {
 
         val bookRepository: BookRepository = koinInject()
         val sessionManager: SessionManager = koinInject()
+        val realtimeManager: RealtimeManager = koinInject()
 
         // SessionManager 동기화: DB 선택 가계부 → SessionManager
         LaunchedEffect(Unit) {
@@ -144,28 +153,51 @@ fun App() {
             }
         }
 
+        // 가계부·사용자가 바뀔 때마다 현재 사용자 역할 갱신
+        val activeBookForRole by sessionManager.activeBook.collectAsState()
+        LaunchedEffect(authUser?.id, activeBookForRole?.id) {
+            val userId = authUser?.id
+            val book = activeBookForRole
+            if (userId != null && book != null) {
+                val role = runCatching { bookRepository.getCurrentUserRole(book.id) }.getOrNull()
+                sessionManager.setCurrentRole(role)
+            } else {
+                sessionManager.setCurrentRole(null)
+            }
+        }
+
+        // 강퇴/가계부 삭제 알림 큐
+        var revokedBookNames by remember { mutableStateOf<List<String>>(emptyList()) }
+
         // 로그인/로그아웃 시 처리
         var prevAuthUser by remember { mutableStateOf<LocalUser?>(null) }
         LaunchedEffect(authUser) {
             sessionManager.setUser(authUser)
-            if (authUser != null && prevAuthUser == null) {
+            val user = authUser
+            if (user != null && prevAuthUser == null) {
                 // 로그인 시: 서버에서 전체 가계부 목록 동기화
-                val syncResult = runCatching { bookRepository.syncBooks() }
-                if (syncResult.isSuccess) {
-                    val hasBooks = bookRepository.getAllBooks().first().isNotEmpty()
-                    if (!hasBooks) {
-                        // 가계부가 없으면 기본 가계부 자동 생성 (신규 가입자)
-                        runCatching { bookRepository.createBook("내 가계부", "#A0522D", "📒") }
-                            .onFailure { println("[App] createBook failed: ${it.message}") }
-                    } else {
-                        // 선택된 가계부 데이터 즉시 동기화
-                        runCatching {
-                            val book = bookRepository.getSelectedBook().first()
-                            book?.let { bookRepository.syncBookData(it.id) }
-                        }.onFailure { println("[App] syncBookData failed: ${it.message}") }
+                val removedBooks = runCatching { bookRepository.syncBooks() }.getOrElse { emptyList() }
+                // 공유 가계부 중 서버에서 제거된 항목 알림
+                val currentUserId = user.id
+                val removedShared = removedBooks.filter { it.ownerId != currentUserId }
+                if (removedShared.isNotEmpty()) {
+                    revokedBookNames = revokedBookNames + removedShared.map { it.name }
+                    // 제거된 가계부가 활성 상태였으면 세션 초기화
+                    val activeId = sessionManager.activeBookId
+                    if (activeId != null && removedBooks.any { it.id == activeId }) {
+                        val nextBook = bookRepository.getSelectedBook().first()
+                        sessionManager.setActiveBook(nextBook)
+                        if (nextBook != null) sessionManager.notifyBookSwitched(nextBook)
                     }
+                }
+
+                val hasBooks = bookRepository.getAllBooks().first().isNotEmpty()
+                if (!hasBooks) {
+                    // 가계부가 없으면 기본 가계부 자동 생성 (신규 가입자)
+                    runCatching { bookRepository.createBook("내 가계부", "#A0522D", "📒") }
+                        .onFailure { println("[App] createBook failed: ${it.message}") }
                 } else {
-                    println("[App] syncBooks failed: ${syncResult.exceptionOrNull()?.message}")
+                    // 선택된 가계부 데이터 즉시 동기화
                     runCatching {
                         val book = bookRepository.getSelectedBook().first()
                         book?.let { bookRepository.syncBookData(it.id) }
@@ -175,6 +207,49 @@ fun App() {
                 sessionManager.clear()
             }
             prevAuthUser = authUser
+        }
+
+        // Realtime 멤버십 구독 + FCM 토큰 등록
+        LaunchedEffect(authUser?.id) {
+            val uid = authUser?.id
+            if (uid != null) {
+                realtimeManager.startWatchingMembership(uid)
+                registerFcmToken { token ->
+                    scope.launch { runCatching { authRepository.registerFcmToken(token) } }
+                }
+            } else {
+                realtimeManager.stopWatchingMembership()
+            }
+        }
+
+        // 강퇴 처리: Realtime 이벤트 + FCM 알림 탭을 단일 수집기로 처리
+        LaunchedEffect(Unit) {
+            merge(realtimeManager.membershipRevoked, KickNotificationRegistry.kickedBookId)
+                .collect { bookId ->
+                    val book = bookRepository.getAllBooks().first().firstOrNull { it.id == bookId }
+                        ?: return@collect
+                    val nextBook = runCatching { bookRepository.removeBookLocally(bookId) }.getOrNull()
+                    if (sessionManager.activeBookId == bookId) {
+                        sessionManager.setActiveBook(nextBook)
+                        if (nextBook != null) sessionManager.notifyBookSwitched(nextBook)
+                    }
+                    revokedBookNames = revokedBookNames + book.name
+                }
+        }
+
+        // 강퇴/삭제 알림 다이얼로그
+        if (revokedBookNames.isNotEmpty()) {
+            val bookName = revokedBookNames.first()
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { revokedBookNames = revokedBookNames.drop(1) },
+                title = { Text("가계부 접근 불가") },
+                text = { Text("'$bookName' 가계부에서 접근이 취소되었습니다.") },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(
+                        onClick = { revokedBookNames = revokedBookNames.drop(1) }
+                    ) { Text("확인") }
+                },
+            )
         }
 
         // Supabase 세션 복원 대기 (최대 2초)
@@ -191,9 +266,12 @@ fun App() {
             return@BudgetTheme
         }
 
+        // loginScreen 상태를 조건문 바깥에 선언 — 회원가입 중 authUser 플래시 동안에도 유지됨
+        var loginScreen by remember { mutableStateOf<Screen>(Screen.Login) }
+
         // 인증 필수: 로그인하지 않으면 앱 사용 불가
-        if (authUser == null) {
-            var loginScreen by remember { mutableStateOf<Screen>(Screen.Login) }
+        // loginScreen이 Signup인 경우 authUser가 잠시 non-null이 되어도 가입 화면 유지
+        if (authUser == null || loginScreen is Screen.Signup) {
             when (loginScreen) {
                 is Screen.Login -> LoginScreen(
                     onNavigateToSignup = { loginScreen = Screen.Signup },
@@ -210,7 +288,6 @@ fun App() {
             return@BudgetTheme
         }
 
-        val scope = rememberCoroutineScope()
         var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
         var drawerOpen by remember { mutableStateOf(false) }
         var isAdminMode by remember { mutableStateOf(false) }
@@ -363,6 +440,8 @@ private fun AppContent(
 ) {
     val sessionManager: SessionManager = org.koin.compose.koinInject()
     val activeBook by sessionManager.activeBook.collectAsState()
+    val currentRole by sessionManager.currentRole.collectAsState()
+    val canWrite = currentRole?.canWrite() ?: true
     var showNoBookDialog by remember { mutableStateOf(false) }
 
     if (showNoBookDialog) {
@@ -384,14 +463,31 @@ private fun AppContent(
         )
     }
 
+    var showViewerDialog by remember { mutableStateOf(false) }
+
+    if (showViewerDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showViewerDialog = false },
+            title = { Text("읽기 전용") },
+            text = { Text("뷰어는 거래를 추가하거나 수정할 수 없습니다.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { showViewerDialog = false }) {
+                    Text("확인")
+                }
+            },
+        )
+    }
+
     val onAddClick: (Screen) -> Unit = { previousScreen ->
-        if (activeBook != null) onNavigate(Screen.AddEdit(previousScreen = previousScreen))
-        else showNoBookDialog = true
+        when {
+            !canWrite -> showViewerDialog = true
+            activeBook != null -> onNavigate(Screen.AddEdit(previousScreen = previousScreen))
+            else -> showNoBookDialog = true
+        }
     }
 
     val showBottomBar = currentScreen !is Screen.AddEdit
             && currentScreen !is Screen.CategoryManagement
-            && currentScreen !is Screen.FixedExpenses
             && currentScreen !is Screen.Search
             && currentScreen !is Screen.DataManagement
             && currentScreen !is Screen.DbViewer
@@ -474,7 +570,7 @@ private fun AppContent(
             targetState = currentScreen,
             transitionSpec = {
                 val isSubScreen = { s: Screen ->
-                    s is Screen.AddEdit || s is Screen.CategoryManagement || s is Screen.FixedExpenses
+                    s is Screen.AddEdit || s is Screen.CategoryManagement
                     || s is Screen.Search || s is Screen.DataManagement || s is Screen.DbViewer
                     || s is Screen.BookList || s is Screen.CreateBook || s is Screen.BookSettings
                     || s is Screen.EditBook || s is Screen.Invite || s is Screen.MemberManagement
@@ -494,25 +590,25 @@ private fun AppContent(
             when (screen) {
                 is Screen.Home -> HomeScreen(
                     onAddClick = { onAddClick(Screen.Home) },
-                    onTransactionClick = { id -> onNavigate(Screen.AddEdit(id)) },
-                    onMenuClick = onMenuClick
+                    onTransactionClick = { id -> onNavigate(Screen.AddEdit(id, readOnly = !canWrite)) },
+                    onMenuClick = onMenuClick,
+                    canWrite = canWrite
                 )
                 is Screen.Transactions -> TransactionListScreen(
                     onAddClick = { onAddClick(Screen.Transactions) },
-                    onTransactionClick = { id -> onNavigate(Screen.AddEdit(id, Screen.Transactions)) },
+                    onTransactionClick = { id -> onNavigate(Screen.AddEdit(id, Screen.Transactions, readOnly = !canWrite)) },
                     onSearchClick = { onNavigate(Screen.Search) },
-                    onMenuClick = onMenuClick
+                    onMenuClick = onMenuClick,
+                    canWrite = canWrite
                 )
                 is Screen.Statistics -> StatisticsScreen(
                     onMenuClick = onMenuClick
                 )
                 is Screen.Assets -> AssetScreen(
-                    onMenuClick = onMenuClick
+                    onMenuClick = onMenuClick,
+                    canWrite = canWrite
                 )
                 is Screen.CategoryManagement -> CategoryManagementScreen(
-                    onBack = { onNavigate(screen.previousScreen) }
-                )
-                is Screen.FixedExpenses -> FixedExpenseScreen(
                     onBack = { onNavigate(screen.previousScreen) }
                 )
                 is Screen.Search -> SearchScreen(
@@ -527,7 +623,8 @@ private fun AppContent(
                 )
                 is Screen.AddEdit -> AddEditScreen(
                     transactionId = screen.transactionId,
-                    onBack = { onNavigate(screen.previousScreen) }
+                    onBack = { onNavigate(screen.previousScreen) },
+                    readOnly = screen.readOnly
                 )
                 is Screen.BookList -> BookListScreen(
                     onBack = { onNavigate(Screen.Home) },
@@ -545,8 +642,8 @@ private fun AppContent(
                     onNavigateToEdit = { bookId, readOnly -> onNavigate(Screen.EditBook(bookId, screen, readOnly)) },
                     onNavigateToInvite = { bookId -> onNavigate(Screen.Invite(bookId, screen)) },
                     onNavigateToMembers = { bookId -> onNavigate(Screen.MemberManagement(bookId, screen)) },
-                    onBookDeleted = { onNavigate(Screen.Home) },
-                    onBookLeft = { onNavigate(Screen.Home) },
+                    onBookDeleted = { onNavigate(Screen.BookList) },
+                    onBookLeft = { onNavigate(Screen.BookList) },
                 )
                 is Screen.EditBook -> EditBookScreen(
                     bookId = screen.bookId,
@@ -586,6 +683,7 @@ private fun AppDrawer(
     activeBook: com.myapp.budget.domain.model.Book?,
     onLogoutClick: () -> Unit,
 ) {
+    val nanumGothic = FontFamily(Font(Res.font.nanum_gothic))
     val gradient = Brush.horizontalGradient(
         colors = listOf(PotatoBrown, Color(0xFFFFBD5E), PotatoDark)
     )
@@ -638,6 +736,7 @@ private fun AppDrawer(
                     text = "감자 가계부",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.ExtraBold,
+                    fontFamily = nanumGothic,
                     color = Color.White
                 )
                 Text(

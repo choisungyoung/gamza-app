@@ -1,8 +1,10 @@
 package com.myapp.budget.platform
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
@@ -44,18 +46,21 @@ actual fun rememberFileSaver(): FileSaverState {
 @Composable
 actual fun rememberFilePicker(onPicked: (ByteArray) -> Unit): FilePickerState {
     val coordinatorRef = remember { mutableStateOf<DocumentPickerCoordinator?>(null) }
+    val currentOnPicked by rememberUpdatedState(onPicked)
     return remember {
         FilePickerState {
             val coord = DocumentPickerCoordinator { nsData ->
+                coordinatorRef.value = null
                 val len = nsData.length.toInt()
                 if (len > 0) {
                     val bytes = ByteArray(len)
                     bytes.usePinned { pinned ->
                         memcpy(pinned.addressOf(0), nsData.bytes, nsData.length)
                     }
-                    onPicked(bytes)
+                    currentOnPicked(bytes)
+                } else {
+                    currentOnPicked(ByteArray(0))
                 }
-                coordinatorRef.value = null
             }
             coordinatorRef.value = coord
 

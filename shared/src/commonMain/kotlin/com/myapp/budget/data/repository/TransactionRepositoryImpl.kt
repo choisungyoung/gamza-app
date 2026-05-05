@@ -9,6 +9,7 @@ import com.myapp.budget.domain.model.Transaction
 import com.myapp.budget.domain.model.TransactionType
 import com.myapp.budget.domain.repository.TransactionRepository
 import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -38,26 +39,21 @@ class TransactionRepositoryImpl(
             }
         }.map { list -> list.map { it.toModel() } }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
-    override fun getAllFixed(): Flow<List<Transaction>> =
-        sessionManager.activeBook.flatMapLatest { book ->
-            val bookId = book?.id ?: ""
-            if (bookId.isNotBlank()) {
-                queries.selectFixedTransactionsByBookId(bookId).asFlow().mapToList(Dispatchers.Default)
-            } else {
-                flowOf(emptyList())
-            }
-        }.map { list -> list.map { it.toModel() } }
+    override suspend fun getAllByBookId(bookId: String): List<Transaction> =
+        queries.selectByBookId(bookId).executeAsList().map { it.toModel() }
 
-    override suspend fun insert(transaction: Transaction) {
-        val bookId = sessionManager.activeBookId
+    override suspend fun insert(transaction: Transaction, bookId: String?) {
+        val effectiveBookId = bookId ?: sessionManager.activeBookId
             ?: error("활성화된 가계부가 없습니다. 로그인이 필요합니다.")
-        val createdBy = sessionManager.currentUser.value?.id ?: ""
+        // sessionManager가 일시적으로 clear()된 경우 Supabase 클라이언트에서 직접 조회
+        val createdBy = sessionManager.currentUser.value?.id
+            ?: supabase.auth.currentUserOrNull()?.id
+            ?: ""
 
         // 서버에 먼저 저장
         val dto = supabase.postgrest.from("transactions").insert(
             TransactionRemoteDto(
-                bookId = bookId, title = transaction.title,
+                bookId = effectiveBookId, title = transaction.title,
                 amount = transaction.amount, type = transaction.type.name,
                 category = transaction.category, date = transaction.date.toString(),
                 time = transaction.time.toString(), note = transaction.note,
@@ -79,7 +75,7 @@ class TransactionRepositoryImpl(
             time = transaction.time.toString(), note = transaction.note,
             asset = transaction.asset, to_asset = transaction.toAsset,
             is_fixed = if (transaction.isFixed) 1L else 0L,
-            book_id = bookId, created_by = createdBy,
+            book_id = effectiveBookId, created_by = createdBy,
         )
         val localId = queries.lastInsertRowId().executeAsOne()
         queries.updateTransactionRemoteId(dto.id, localId)

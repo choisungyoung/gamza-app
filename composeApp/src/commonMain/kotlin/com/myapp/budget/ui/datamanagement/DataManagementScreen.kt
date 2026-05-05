@@ -40,12 +40,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -74,12 +76,12 @@ fun DataManagementScreen(
 
     val state by viewModel.uiState.collectAsState()
     var showImportConfirm by remember { mutableStateOf(false) }
-    var pendingImportBytes by remember { mutableStateOf<ByteArray?>(null) }
 
     val fileSaver = rememberFileSaver()
+    // 파일 선택 완료 시 바로 import 실행 (콜백 → showImportConfirm 방식은 Activity 전환 중
+    // Composition 인스턴스가 교체되어 상태 업데이트가 소실되는 문제 있음)
     val filePicker = rememberFilePicker { bytes ->
-        pendingImportBytes = bytes
-        showImportConfirm = true
+        viewModel.import(bytes)
     }
 
     // 내보내기 준비 이벤트 수신 → 플랫폼 공유 다이얼로그 표시
@@ -87,6 +89,19 @@ fun DataManagementScreen(
         viewModel.exportReady.collect { (bytes, fileName) ->
             fileSaver.save(bytes, fileName)
         }
+    }
+
+    // 결과 메시지 5초 후 자동 닫기
+    LaunchedEffect(state.message) {
+        if (state.message != null) {
+            delay(5_000)
+            viewModel.clearMessage()
+        }
+    }
+
+    // 화면 이탈 시 메시지 초기화 (돌아왔을 때 이전 메시지 남지 않도록)
+    DisposableEffect(Unit) {
+        onDispose { viewModel.clearMessage() }
     }
 
     Scaffold(
@@ -143,7 +158,7 @@ fun DataManagementScreen(
                 buttonIcon = Icons.Default.FileUpload,
                 buttonColor = PotatoDark,
                 isLoading = state.isImporting,
-                onClick = { filePicker.pick() }
+                onClick = { showImportConfirm = true }
             )
 
             // 결과 메시지
@@ -165,17 +180,15 @@ fun DataManagementScreen(
         }
     }
 
-    // 가져오기 확인 다이얼로그
+    // 가져오기 확인 다이얼로그 → 확인 후 파일 선택
     if (showImportConfirm) {
         ImportConfirmDialog(
             onConfirm = {
                 showImportConfirm = false
-                pendingImportBytes?.let { viewModel.import(it) }
-                pendingImportBytes = null
+                filePicker.pick()
             },
             onDismiss = {
                 showImportConfirm = false
-                pendingImportBytes = null
             }
         )
     }

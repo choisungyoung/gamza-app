@@ -25,9 +25,6 @@ SELECT * FROM TransactionEntity WHERE book_id = ? ORDER BY date DESC, time DESC;
 selectById:
 SELECT * FROM TransactionEntity WHERE id = ?;
 
-selectFixedTransactionsByBookId:
-SELECT * FROM TransactionEntity WHERE book_id = ? AND is_fixed = 1 ORDER BY date DESC, id DESC;
-
 insert:
 INSERT INTO TransactionEntity (title, amount, type, category, category_emoji, date, time, note, asset, to_asset, is_fixed)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
@@ -322,6 +319,9 @@ UPDATE AssetEntity SET book_id = ? WHERE book_id = '';
 deleteTransactionsByBookId:
 DELETE FROM TransactionEntity WHERE book_id = ?;
 
+deleteSyncedTransactionsByBookId:
+DELETE FROM TransactionEntity WHERE book_id = ? AND remote_id != '';
+
 deleteUserCategoriesByBookId:
 DELETE FROM UserCategoryEntity WHERE book_id = ?;
 
@@ -347,6 +347,12 @@ SELECT id FROM TransactionEntity WHERE remote_id = ?;
 
 updateParentCategoryRemoteId:
 UPDATE ParentCategoryEntity SET remote_id = ? WHERE id = ?;
+
+updateParentCategoryBookId:
+UPDATE ParentCategoryEntity SET book_id = ? WHERE id = ?;
+
+deleteSeededParentByNameAndType:
+DELETE FROM ParentCategoryEntity WHERE book_id = '' AND name = ? AND type = ?;
 
 selectParentCategoryRemoteId:
 SELECT remote_id FROM ParentCategoryEntity WHERE id = ?;
@@ -376,6 +382,13 @@ SELECT * FROM ParentCategoryEntity WHERE book_id = ?;
 
 selectUserCategoriesByBookId:
 SELECT * FROM UserCategoryEntity WHERE book_id = ?;
+
+-- pull 시 Supabase와 동기화된(remote_id != '') 항목만 삭제 → 로컬 전용(import 생성) 항목 보존
+deleteSyncedParentCategoriesByBookId:
+DELETE FROM ParentCategoryEntity WHERE book_id = ? AND remote_id != '';
+
+deleteSyncedUserCategoriesByBookId:
+DELETE FROM UserCategoryEntity WHERE book_id = ? AND remote_id != '';
 
 selectAssetGroupsByBookId:
 SELECT * FROM AssetGroupEntity WHERE book_id = ?;

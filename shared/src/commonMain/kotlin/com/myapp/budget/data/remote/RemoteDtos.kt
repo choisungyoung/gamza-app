@@ -54,6 +54,12 @@ data class AssetGroupRemoteDto(
 )
 
 @Serializable
+data class FcmTokenDto(
+    @SerialName("user_id") val userId: String,
+    val token: String,
+)
+
+@Serializable
 data class AssetRemoteDto(
     val id: String = "",
     @SerialName("book_id") val bookId: String,

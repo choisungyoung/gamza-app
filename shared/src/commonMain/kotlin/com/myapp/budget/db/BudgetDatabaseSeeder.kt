@@ -18,9 +18,6 @@ object BudgetDatabaseSeeder {
         assetGroupData.forEachIndexed { i, g ->
             q.insertAssetGroupWithBook(g.name, g.emoji, g.key, i.toLong(), if (g.isLiability) 1L else 0L, bookId)
         }
-
-        // 기본 계좌: 우리은행
-        q.insertAssetWithBook("우리은행 월급 계좌", "🏦", "", 0L, "ACCOUNT", 0L, bookId)
     }
 
     // ── 카테고리 ────────────────────────────────────────────────────────────
@@ -106,8 +103,8 @@ object BudgetDatabaseSeeder {
 
     private val assetGroupData = listOf(
         GroupDef("ACCOUNT",    "계좌/현금", "🏦"),
+        GroupDef("SAVINGS",    "저축",      "🏦"),
         GroupDef("PAY_MONEY",  "페이머니",  "📱"),
-        GroupDef("CARD",       "카드",      "💳"),
         GroupDef("LOAN",       "대출",      "📊", isLiability = true),
         GroupDef("INVESTMENT", "투자",      "📈"),
     )

@@ -45,8 +45,6 @@ class AddEditViewModel(
     var errorMessage by mutableStateOf<String?>(null)
     var date by mutableStateOf(Clock.System.todayIn(TimeZone.currentSystemDefault()))
     var time by mutableStateOf(Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).time.let { LocalTime(it.hour, it.minute) })
-    var saveAsFixed by mutableStateOf(false)
-
     var transactionType by mutableStateOf(TransactionType.EXPENSE)
         private set
     var selectedParent by mutableStateOf<ParentCategory?>(null)
@@ -85,7 +83,6 @@ class AddEditViewModel(
         selectedAsset = ""
         toAsset = ""
         errorMessage = null
-        saveAsFixed = false
         date = Clock.System.todayIn(TimeZone.currentSystemDefault())
         time = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).time.let { LocalTime(it.hour, it.minute) }
         transactionType = TransactionType.EXPENSE
@@ -107,7 +104,6 @@ class AddEditViewModel(
                     selectedAsset = transaction.asset
                     toAsset = transaction.toAsset
                     time = transaction.time
-                    saveAsFixed = transaction.isFixed
 
                     val parts = transaction.category.split("/", limit = 2)
                     val parentName = parts[0]
@@ -133,7 +129,6 @@ class AddEditViewModel(
         _parentIdFlow.value = 0L
         selectedAsset = ""
         toAsset = ""
-        if (newType != TransactionType.EXPENSE) saveAsFixed = false
     }
 
     fun selectParent(parent: ParentCategory) {
@@ -142,23 +137,23 @@ class AddEditViewModel(
         selectedSubcategory = null
     }
 
-    fun addSubcategory(name: String, emoji: String) {
+    fun addSubcategory(name: String) {
         val parent = selectedParent ?: return
         if (name.isBlank()) return
         viewModelScope.launch {
             categoryRepository.insert(
-                UserCategory(name = name.trim(), emoji = emoji.ifBlank { "📌" },
+                UserCategory(name = name.trim(), emoji = "📌",
                     parentId = parent.id, type = transactionType)
             )
         }
     }
 
-    fun updateSubcategory(id: Long, name: String, emoji: String) {
+    fun updateSubcategory(id: Long, name: String) {
         if (name.isBlank()) return
         viewModelScope.launch {
-            categoryRepository.update(id, name.trim(), emoji.ifBlank { "📌" })
+            categoryRepository.update(id, name.trim(), "📌")
             if (selectedSubcategory?.id == id) {
-                selectedSubcategory = selectedSubcategory?.copy(name = name.trim(), emoji = emoji.ifBlank { "📌" })
+                selectedSubcategory = selectedSubcategory?.copy(name = name.trim(), emoji = "📌")
             }
         }
     }
@@ -173,11 +168,8 @@ class AddEditViewModel(
     fun previousDay() { date = date.minus(DatePeriod(days = 1)) }
     fun nextDay() { date = date.plus(DatePeriod(days = 1)) }
 
-    fun onFixedExpenseToggled(newValue: Boolean) {
-        saveAsFixed = newValue
-    }
-
     fun save(onSuccess: () -> Unit) {
+        if (isLoading) return
         val amount = rawAmount.toLongOrNull()
         if (title.isBlank()) { errorMessage = "제목을 입력해주세요."; return }
         if (amount == null || amount <= 0) { errorMessage = "올바른 금액을 입력해주세요."; return }
@@ -216,7 +208,7 @@ class AddEditViewModel(
                     note = note.trim(),
                     asset = selectedAsset,
                     toAsset = toAsset,
-                    isFixed = saveAsFixed && transactionType == TransactionType.EXPENSE
+                    isFixed = false
                 )
                 if (editingId != null) repository.update(transaction) else repository.insert(transaction)
                 onSuccess()
@@ -228,6 +220,7 @@ class AddEditViewModel(
     }
 
     fun delete(onSuccess: () -> Unit) {
+        if (isLoading) return
         val id = editingId ?: return
         viewModelScope.launch {
             isLoading = true

@@ -27,7 +27,7 @@ val sharedModule = module {
     single<TransactionRepository> { TransactionRepositoryImpl(get(), get(), get()) }
     single<CategoryRepository> { CategoryRepositoryImpl(get(), get(), get()) }
     single<AssetRepository> { AssetRepositoryImpl(get(), get(), get()) }
-    single<DataExportRepository> { DataExportRepositoryImpl(get()) }
+    single<DataExportRepository> { DataExportRepositoryImpl(get(), get()) }
     single<DbViewerRepository> { DbViewerRepositoryImpl(get()) }
     single<AuthRepository> { AuthRepositoryImpl(get()) }
     single<BookRepository> { BookRepositoryImpl(get()) }

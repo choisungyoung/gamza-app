@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
@@ -24,6 +25,9 @@ data class BookUiState(
     val createdBook: Book? = null,
     val joinedBook: Book? = null,
     val leftBook: Boolean = false,
+    val bookSelected: Boolean = false,
+    val deletedBook: Boolean = false,
+    val revokedBookName: String? = null, // 강퇴/가계부 삭제 알림
 )
 
 class BookViewModel(
@@ -71,6 +75,7 @@ class BookViewModel(
 
     fun selectBook(book: Book) {
         viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, bookSelected = false)
             runCatching { bookRepository.selectBook(book.id) }
                 .onSuccess {
                     // sync 먼저 완료 후 activeBook 전환 → pullBookData의 delete→insert 사이에
@@ -78,6 +83,10 @@ class BookViewModel(
                     runCatching { bookRepository.syncBookData(book.id) }
                     sessionManager.setActiveBook(book)
                     sessionManager.notifyBookSwitched(book)
+                    _uiState.value = _uiState.value.copy(isLoading = false, bookSelected = true)
+                }
+                .onFailure {
+                    _uiState.value = _uiState.value.copy(isLoading = false)
                 }
         }
     }
@@ -103,7 +112,18 @@ class BookViewModel(
         viewModelScope.launch {
             _uiState.value = BookUiState(isLoading = true)
             runCatching { bookRepository.deleteBook(bookId) }
-                .onSuccess { _uiState.value = BookUiState() }
+                .onSuccess {
+                    val nextBook = books.value.firstOrNull { it.id != bookId }
+                    if (nextBook != null) {
+                        runCatching { bookRepository.selectBook(nextBook.id) }
+                        runCatching { bookRepository.syncBookData(nextBook.id) }
+                        sessionManager.setActiveBook(nextBook)
+                        sessionManager.notifyBookSwitched(nextBook)
+                    } else {
+                        sessionManager.setActiveBook(null)
+                    }
+                    _uiState.value = BookUiState(deletedBook = true)
+                }
                 .onFailure { _uiState.value = BookUiState(error = it.message ?: "가계부 삭제에 실패했습니다.") }
         }
     }
@@ -164,6 +184,31 @@ class BookViewModel(
                 .onSuccess { _uiState.value = BookUiState() }
                 .onFailure { _uiState.value = BookUiState(error = it.message ?: "가계부 수정에 실패했습니다.") }
         }
+    }
+
+    /**
+     * 서버 멤버십과 로컬 캐시를 비교해 접근 불가 가계부를 제거한다.
+     * BookListScreen 진입 시 호출 → 앱 실행 중 강퇴/삭제를 즉시 감지.
+     */
+    fun syncBooksFromServer() {
+        viewModelScope.launch {
+            val removed = runCatching { bookRepository.syncBooks() }.getOrElse { return@launch }
+            val currentUserId = sessionManager.currentUser.value?.id ?: return@launch
+            val removedShared = removed.filter { it.ownerId != currentUserId }
+            if (removedShared.isNotEmpty()) {
+                val activeId = sessionManager.activeBookId
+                if (activeId != null && removed.any { it.id == activeId }) {
+                    val nextBook = bookRepository.getSelectedBook().first()
+                    sessionManager.setActiveBook(nextBook)
+                    if (nextBook != null) sessionManager.notifyBookSwitched(nextBook)
+                }
+                _uiState.value = _uiState.value.copy(revokedBookName = removedShared.first().name)
+            }
+        }
+    }
+
+    fun clearRevokedBookName() {
+        _uiState.value = _uiState.value.copy(revokedBookName = null)
     }
 
     fun clearError() {

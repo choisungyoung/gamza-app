@@ -43,8 +43,8 @@ class CategoryRepositoryImpl(
             .asFlow().mapToList(Dispatchers.Default)
             .map { it.map { e -> e.toParentModel() } }
 
-    override suspend fun insert(category: UserCategory) = withContext(Dispatchers.Default) {
-        val bookId = sessionManager.activeBookId
+    override suspend fun insert(category: UserCategory, bookId: String?) = withContext(Dispatchers.Default) {
+        val bookId = bookId ?: sessionManager.activeBookId
             ?: error("활성화된 가계부가 없습니다. 로그인이 필요합니다.")
         val maxOrder = q.maxUserCategorySortOrder(category.parentId).executeAsOne()
         q.insertUserCategoryWithBook(category.name, category.emoji, category.parentId, category.type.name, maxOrder + 1, bookId)
@@ -62,8 +62,34 @@ class CategoryRepositoryImpl(
         Unit
     }
 
-    override suspend fun insertParent(name: String, emoji: String, type: TransactionType) = withContext(Dispatchers.Default) {
-        val bookId = sessionManager.activeBookId
+    /** import 전용: Supabase 동기화 실패 시 예외 throw */
+    override suspend fun insertParentAndSync(name: String, emoji: String, type: TransactionType, bookId: String) = withContext(Dispatchers.Default) {
+        val maxOrder = q.maxParentSortOrderByType(type.name).executeAsOne()
+        q.insertParentWithBook(name.trim(), emoji.ifBlank { "📌" }, type.name, maxOrder + 1, bookId)
+        val localId = q.lastInsertRowId().executeAsOne()
+        val dto = supabase.postgrest.from("parent_categories").insert(
+            ParentCategoryRemoteDto(bookId = bookId, name = name.trim(),
+                emoji = emoji.ifBlank { "📌" }, type = type.name, sortOrder = (maxOrder + 1).toInt())
+        ) { select() }.decodeSingle<ParentCategoryRemoteDto>()
+        q.updateParentCategoryRemoteId(dto.id, localId)
+    }
+
+    /** import 전용: Supabase 동기화 실패 시 예외 throw */
+    override suspend fun insertAndSync(category: UserCategory, bookId: String) = withContext(Dispatchers.Default) {
+        val maxOrder = q.maxUserCategorySortOrder(category.parentId).executeAsOne()
+        q.insertUserCategoryWithBook(category.name, category.emoji, category.parentId, category.type.name, maxOrder + 1, bookId)
+        val localId = q.lastInsertRowId().executeAsOne()
+        val parentRemoteId = q.selectParentCategoryRemoteId(category.parentId).executeAsOneOrNull()
+        check(!parentRemoteId.isNullOrBlank()) { "부모 카테고리가 Supabase에 동기화되지 않았습니다." }
+        val dto = supabase.postgrest.from("user_categories").insert(
+            UserCategoryRemoteDto(bookId = bookId, name = category.name, emoji = category.emoji,
+                parentRemoteId = parentRemoteId, type = category.type.name, sortOrder = (maxOrder + 1).toInt())
+        ) { select() }.decodeSingle<UserCategoryRemoteDto>()
+        q.updateUserCategoryRemoteId(dto.id, localId)
+    }
+
+    override suspend fun insertParent(name: String, emoji: String, type: TransactionType, bookId: String?) = withContext(Dispatchers.Default) {
+        val bookId = bookId ?: sessionManager.activeBookId
             ?: error("활성화된 가계부가 없습니다. 로그인이 필요합니다.")
         val maxOrder = q.maxParentSortOrderByType(type.name).executeAsOne()
         q.insertParentWithBook(name.trim(), emoji.ifBlank { "📌" }, type.name, maxOrder + 1, bookId)

@@ -85,18 +85,18 @@ class CategoryManagementViewModel(
         viewModelScope.launch { categoryRepository.insertParent(name, emoji, selectedType.value) }
     }
 
-    fun addSubcategory(name: String, emoji: String, parentId: Long, type: TransactionType) {
+    fun addSubcategory(name: String, parentId: Long, type: TransactionType) {
         if (name.isBlank()) return
         viewModelScope.launch {
             categoryRepository.insert(
-                UserCategory(name = name.trim(), emoji = emoji.ifBlank { "📌" }, parentId = parentId, type = type)
+                UserCategory(name = name.trim(), emoji = "📌", parentId = parentId, type = type)
             )
         }
     }
 
-    fun updateSubcategory(id: Long, name: String, emoji: String) {
+    fun updateSubcategory(id: Long, name: String) {
         if (name.isBlank()) return
-        viewModelScope.launch { categoryRepository.update(id, name.trim(), emoji.ifBlank { "📌" }) }
+        viewModelScope.launch { categoryRepository.update(id, name.trim(), "📌") }
     }
 
     fun deleteSubcategory(id: Long) {

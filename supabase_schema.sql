@@ -12,6 +12,7 @@ DROP POLICY IF EXISTS "book_members_read"             ON book_members;
 DROP POLICY IF EXISTS "book_members_select"           ON book_members;
 DROP POLICY IF EXISTS "book_members_insert"           ON book_members;
 DROP POLICY IF EXISTS "book_members_delete"           ON book_members;
+DROP POLICY IF EXISTS "book_members_update"           ON book_members;
 DROP POLICY IF EXISTS "invite_codes_read"             ON invite_codes;
 DROP POLICY IF EXISTS "invite_codes_select"           ON invite_codes;
 DROP POLICY IF EXISTS "invite_codes_insert"           ON invite_codes;
@@ -21,6 +22,7 @@ DROP POLICY IF EXISTS "parent_categories_book_member" ON parent_categories;
 DROP POLICY IF EXISTS "user_categories_book_member"   ON user_categories;
 DROP POLICY IF EXISTS "asset_groups_book_member"      ON asset_groups;
 DROP POLICY IF EXISTS "assets_book_member"            ON assets;
+DROP POLICY IF EXISTS "fcm_tokens_owner"              ON user_fcm_tokens;
 
 -- ── 2. 함수 삭제 ─────────────────────────────────────────────────────────────
 
@@ -31,6 +33,7 @@ DROP FUNCTION IF EXISTS is_book_member(uuid) CASCADE;
 
 -- ── 3. 테이블 삭제 (자식 → 부모 순서) ───────────────────────────────────────
 
+DROP TABLE IF EXISTS user_fcm_tokens    CASCADE;
 DROP TABLE IF EXISTS assets             CASCADE;
 DROP TABLE IF EXISTS asset_groups       CASCADE;
 DROP TABLE IF EXISTS user_categories    CASCADE;
@@ -133,9 +136,17 @@ CREATE TABLE assets (
     sort_order      INT    NOT NULL DEFAULT 0
 );
 
+-- FCM 토큰 (사용자당 1개, 로그인 시 upsert)
+CREATE TABLE user_fcm_tokens (
+    user_id    UUID        PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    token      TEXT        NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- ── 5. RLS 활성화 ────────────────────────────────────────────────────────────
 
 ALTER TABLE books             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_fcm_tokens   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE book_members      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invite_codes      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions      ENABLE ROW LEVEL SECURITY;
@@ -143,6 +154,18 @@ ALTER TABLE parent_categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_categories   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE asset_groups      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assets            ENABLE ROW LEVEL SECURITY;
+
+-- ── 5-1. Realtime DELETE 이벤트 전달을 위한 REPLICA IDENTITY 설정 ────────────
+-- RLS가 활성화된 테이블에서 DELETE 시 book_id 등 비-PK 컬럼을 WAL에 포함시켜야
+-- Supabase Realtime이 RLS 정책(is_book_member)을 평가할 수 있음.
+-- REPLICA IDENTITY DEFAULT(기본)는 PK만 포함 → DELETE 이벤트가 구독자에게 전달 안 됨.
+ALTER TABLE transactions      REPLICA IDENTITY FULL;
+ALTER TABLE assets            REPLICA IDENTITY FULL;
+ALTER TABLE asset_groups      REPLICA IDENTITY FULL;
+ALTER TABLE parent_categories REPLICA IDENTITY FULL;
+ALTER TABLE user_categories   REPLICA IDENTITY FULL;
+-- book_members: 강퇴/가계부 삭제 시 피강퇴자에게 DELETE 이벤트 전달을 위해 필요
+ALTER TABLE book_members      REPLICA IDENTITY FULL;
 
 -- ── 6. 헬퍼 함수: is_book_member ─────────────────────────────────────────────
 -- SECURITY DEFINER로 RLS 없이 직접 조회 → book_members 정책 재귀 방지
@@ -176,9 +199,11 @@ CREATE POLICY "books_owner_write" ON books
 -- ── 8. book_members 정책 ─────────────────────────────────────────────────────
 
 -- 멤버는 같은 가계부의 멤버 목록 조회 가능
+-- user_id = auth.uid() 조건을 추가해야 Realtime DELETE 이벤트(강퇴/가계부 삭제)를
+-- 해당 유저에게 전달 가능. (RLS는 OLD 레코드 기준으로 평가됨)
 CREATE POLICY "book_members_read" ON book_members
     FOR SELECT
-    USING (is_book_member(book_id));
+    USING (user_id = auth.uid() OR is_book_member(book_id));
 
 -- 본인 자신만 멤버로 추가 가능 (초대 코드 수락)
 CREATE POLICY "book_members_insert" ON book_members
@@ -191,6 +216,15 @@ CREATE POLICY "book_members_delete" ON book_members
     USING (
         user_id = auth.uid()
         OR EXISTS (SELECT 1 FROM books b WHERE b.id = book_members.book_id AND b.owner_id = auth.uid())
+    );
+
+-- 오너만 멤버 역할 변경 가능 (OWNER 역할로는 변경 불가)
+CREATE POLICY "book_members_update" ON book_members
+    FOR UPDATE
+    USING (EXISTS (SELECT 1 FROM books b WHERE b.id = book_members.book_id AND b.owner_id = auth.uid()))
+    WITH CHECK (
+        EXISTS (SELECT 1 FROM books b WHERE b.id = book_members.book_id AND b.owner_id = auth.uid())
+        AND role != 'OWNER'
     );
 
 -- ── 9. invite_codes 정책 ─────────────────────────────────────────────────────
@@ -236,7 +270,15 @@ CREATE POLICY "assets_book_member" ON assets
     USING (is_book_member(book_id))
     WITH CHECK (is_book_member(book_id));
 
--- ── 11. RPC: 멤버 + 닉네임 조회 ─────────────────────────────────────────────
+-- ── 11. user_fcm_tokens 정책 ─────────────────────────────────────────────────
+-- 본인만 자신의 토큰을 읽고 쓸 수 있음. Service Role은 RLS 우회 가능.
+
+CREATE POLICY "fcm_tokens_owner" ON user_fcm_tokens
+    FOR ALL
+    USING (user_id = auth.uid())
+    WITH CHECK (user_id = auth.uid());
+
+-- ── 13. RPC: 멤버 + 닉네임 조회 ─────────────────────────────────────────────
 -- SECURITY DEFINER로 auth.users에서 display_name 읽기
 
 CREATE OR REPLACE FUNCTION get_members_with_names(p_book_id UUID)
@@ -256,7 +298,7 @@ AS $$
     WHERE bm.book_id = p_book_id;
 $$;
 
--- ── 12. RPC: 내 가계부 목록 + 오너 닉네임 조회 ──────────────────────────────
+-- ── 14. RPC: 내 가계부 목록 + 오너 닉네임 조회 ──────────────────────────────
 
 CREATE OR REPLACE FUNCTION get_my_books_with_owner_names()
 RETURNS TABLE(book_id UUID, owner_display_name TEXT)
@@ -272,7 +314,7 @@ AS $$
     JOIN auth.users au ON au.id = b.owner_id;
 $$;
 
--- ── 13. RPC: 가계부 생성 ─────────────────────────────────────────────────────
+-- ── 15. RPC: 가계부 생성 ─────────────────────────────────────────────────────
 -- SECURITY DEFINER: books INSERT + book_members OWNER 등록을 원자적으로 처리
 
 CREATE OR REPLACE FUNCTION create_book(p_name TEXT, p_color_hex TEXT, p_icon_emoji TEXT)

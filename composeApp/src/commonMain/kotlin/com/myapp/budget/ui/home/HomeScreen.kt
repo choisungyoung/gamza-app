@@ -50,7 +50,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import gamzaapp.composeapp.generated.resources.Res
+import gamzaapp.composeapp.generated.resources.nanum_gothic
+import org.jetbrains.compose.resources.Font
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -71,8 +75,10 @@ fun HomeScreen(
     onAddClick: () -> Unit,
     onTransactionClick: (Long) -> Unit,
     onMenuClick: () -> Unit = {},
+    canWrite: Boolean = true,
     viewModel: HomeViewModel = koinViewModel()
 ) {
+    val nanumGothic = FontFamily(Font(Res.font.nanum_gothic))
     val state by viewModel.uiState.collectAsState()
     val activeBook by viewModel.activeBook.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
@@ -115,6 +121,7 @@ fun HomeScreen(
                         Text(
                             "감자 가계부",
                             fontWeight = FontWeight.Bold,
+                            fontFamily = nanumGothic,
                             style = MaterialTheme.typography.titleLarge
                         )
                         if (isLoggedIn) {
@@ -161,14 +168,16 @@ fun HomeScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = onAddClick,
-                containerColor = PotatoDark,
-                contentColor = Color.White,
-                elevation = FloatingActionButtonDefaults.elevation(8.dp),
-                shape = CircleShape
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "거래 추가", modifier = Modifier.size(28.dp))
+            if (canWrite) {
+                FloatingActionButton(
+                    onClick = onAddClick,
+                    containerColor = PotatoDark,
+                    contentColor = Color.White,
+                    elevation = FloatingActionButtonDefaults.elevation(8.dp),
+                    shape = CircleShape
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "거래 추가", modifier = Modifier.size(28.dp))
+                }
             }
         }
     ) { padding ->
@@ -228,70 +237,6 @@ fun HomeScreen(
                     CategoryBreakdownCard(
                         breakdown = state.summary.categoryBreakdown,
                         totalExpense = state.summary.totalExpense
-                    )
-                }
-            }
-
-            // 이달의 고정지출 섹션
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(4.dp, 18.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(ExpenseColor)
-                        )
-                        Text(
-                            text = "이달의 고정지출",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = PotatoDeep
-                        )
-                    }
-                    if (!state.isLoading && state.fixedExpenseTransactions.isNotEmpty()) {
-                        Text(
-                            text = state.fixedExpenseTransactions.sumOf { it.amount }.formatAsWon(),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = ExpenseColor
-                        )
-                    }
-                }
-            }
-
-            if (state.fixedExpenseTransactions.isEmpty()) {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color.White)
-                            .padding(vertical = 24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "이번 달 고정지출이 없어요",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            } else {
-                val sorted = state.fixedExpenseTransactions.sortedByDescending { it.date }
-                items(sorted, key = { "fixed_tx_${it.id}" }) { tx ->
-                    TransactionItem(
-                        transaction = tx,
-                        onClick = { onTransactionClick(tx.id) },
-                        showTime = false
                     )
                 }
             }
